@@ -4,13 +4,14 @@ import dymos as dm
 import matplotlib.pyplot as plt
 import argparse
 from numpy import sin, cos, sqrt
+from scipy.misc import derivative
 
 class LandingGearODE(om.ExplicitComponent):
 
     x_init = 0.0
     v_init = 0.0
     m = 150.0
-    mL = 0.0
+    mL = 0
     l1 = 0.305
     l2 = 0.102
     k1 = 5e4
@@ -152,7 +153,7 @@ p = om.Problem(model=om.Group())
 traj = dm.Trajectory()
 p.model.add_subsystem('traj', subsys=traj)
 phase = dm.Phase(ode_class=LandingGearODE,
-                 transcription=dm.GaussLobatto(num_segments=30, order=3))
+                 transcription=dm.GaussLobatto(num_segments=40, order=3))
 traj.add_phase(name='phase0', phase=phase)
 phase.set_time_options(fix_initial=True, fix_duration=True, duration_val=4, units='s')
 phase.add_state('x', units='m',   rate_source='xdot', targets=['x'], fix_initial=True)
@@ -183,6 +184,10 @@ sim_out = traj.simulate()
 
 # Plot the results
 fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(12, 7))
+
+v_exp = sim_out.get_val('traj.phase0.timeseries.states:v')
+accel = np.array(v_exp)
+print("Force = ", (150+10)*min(accel), " N")
 
 axes[0, 0].plot(p.get_val('traj.phase0.timeseries.time'),
             p.get_val('traj.phase0.timeseries.states:x'),
