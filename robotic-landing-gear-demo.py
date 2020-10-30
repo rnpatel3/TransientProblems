@@ -9,9 +9,9 @@ from scipy.misc import derivative
 class LandingGearODE(om.ExplicitComponent):
 
     x_init = 0.0
-    v_init = 0.0
+    v_init = 1.0
     m = 150.0
-    mL = 0
+    mL = 20
     l1 = 0.305
     l2 = 0.102
     k1 = 5e4
@@ -187,7 +187,7 @@ fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(12, 7))
 
 v_exp = sim_out.get_val('traj.phase0.timeseries.states:v')
 accel = np.array(v_exp)
-print("Force = ", (150+10)*min(accel), " N")
+print("Force = ", (150+20)*min(accel), " N")
 
 axes[0, 0].plot(p.get_val('traj.phase0.timeseries.time'),
             p.get_val('traj.phase0.timeseries.states:x'),
