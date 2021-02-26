@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Feb 17 21:36:05 2021
-
 @author: rohan
 """
 
@@ -13,34 +11,52 @@ def func(y, t):
     # dot(y[0]) = y[1]
     
     k = 1e8
-    m = 1.0
+    m = 2.0
     delta = 0.0
-    radius = 0.05
+    radius = 0.1
     g = 9.81
     if y[0] <= radius:
-        a = k*(1-0.9**2)/(0.9*(-np.abs(1.75)))
+        a = k*(1-0.8**2)/(0.8*(-np.abs(y[1]))) #0.8 Represents a "coeff of restitution"
         delta = k*(radius - y[0]) + a*(radius - y[0])*y[1]
-        
-    
+
     ydot = np.zeros(2, dtype=y.dtype)
+
     ydot[1] = -g + delta/m
     ydot[0] = y[1]
     
     return ydot
+
+def getForce(v,dt):
+    deltaV = np.diff(v)
+    force = np.divide(deltaV,dt)
+    force = np.insert(force,0,0)
+    return force
+    
 t0 = 0.0
-y0 = np.array([5.0, -1.75])
-t1 = 10.0
-dt = 0.01
-#r = ode(func).set_integrator('zvode', method='bdf')
-#r.set_initial_value(y0, t0)
-#while r.successful() and r.t < t1:
-#    print(r.t+dt, r.integrate(r.t+dt))
+y0 = np.array([2.0, -1.75])
+t1 = 2.5
+iters = [1000,2000,5000,10000,20000,50000,100000,5000000,9000000]
+Forces = []
 
-#sol1 = solve_ivp(func,[0,t1],y0)
-#plt.plot([0,t1],sol1,'g-')
+for N in iters:
+    dt = (t1-t0)/N
+    t = np.linspace(t0,t1,N)
+    ysol = odeint(func,y0,t)
+    yy = ysol[:,0]
+    force = getForce(ysol[:,1],dt)
+    FirstBounce = np.max(force)
+    Forces.append(FirstBounce)
+    if N == 5000000:
+        plt.figure(1)
+        plt.plot(t,yy)
+        plt.figure(3)
+        plt.plot(t,ysol[:,1])
 
-t = np.linspace(t0,t1,5000000)
 
-ysol = odeint(func,y0,t)
-yy = ysol[:,0]
-plt.plot(t,yy)
+
+plt.figure(2)
+plt.plot(np.divide(t1,iters),Forces)
+plt.xlabel("Time Step (s)")
+plt.ylabel("Force")
+plt.yscale('log')
+plt.xscale('log')
