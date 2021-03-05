@@ -23,15 +23,11 @@ def func(y, t):
         delta_vx = (mu*delta_vy*y[3])
         
     ydot = np.zeros(4, dtype=y.dtype)
-    #xdot = np.zeros(2, dtype=y.dtype)
     
     ydot[1] = -g + delta_vy/m      #Vertical accel
     ydot[0] = y[1]              #Vertical vel
     ydot[3] = -delta_vx      #Horizontal accel
     ydot[2] = y[3]      #Horizontal vel
-    
-#    xdot[1] = 
-#    xdot[0] = 
     
     return ydot
 
@@ -43,8 +39,7 @@ def getForce(v,dt):
     
 t0 = 0.0
 y0 = np.array([2.0, -1.75, 0 ,0.5])
-#x0 = np.array([0, 0.5])
-t1 = 5
+t1 = 2.5
 #iters = [1000,2000,5000,10000,20000,50000,100000,5000000,9000000]
 iters = [5000000]
 Forces = []
@@ -55,21 +50,23 @@ for N in iters:
     ysol = odeint(func,y0,t)
     yy = ysol[:,0]
     xx = ysol[:,2]
-    force = getForce(ysol[:,1],dt)
-    FirstBounce = np.max(force)
-    Forces.append(FirstBounce)
+    yforce = getForce(ysol[:,1],dt)
+    xforce = getForce(ysol[:,3],dt) 
+    FirstBounce_y = np.max(yforce)
+    Forces.append(FirstBounce_y)
     if N == 5000000:
         plt.figure(1)
         plt.plot(t,yy)
         plt.figure(3)
         plt.plot(t,ysol[:,1])
         plt.figure(4)
-        plt.plot(t,force)
+        plt.plot(t,yforce)
         plt.figure(5)
         plt.plot(xx,yy)
         plt.figure(6)
         plt.plot(t,ysol[:,3])
-
+        plt.figure(7)
+        plt.plot(t,xforce)
 
 
 #plt.figure(2)
