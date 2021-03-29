@@ -31,14 +31,14 @@ class MultiObj(om.ExplicitComponent):
         
 
     def compute_partials(self,inputs,partials):
-        partials['Multi_obj','topo_c'] = 0
+        partials['Multi_obj','topo_c'] = -0.00005
         partials['Multi_obj', 'topo_stress'] = 1
 
     def compute(self,inputs,outputs):
         topo_compliance = inputs['topo_c']
         topo_stress = inputs['topo_stress']
 
-        outputs['Multi_obj'] = -5.0*topo_compliance + topo_stress
+        outputs['Multi_obj'] = -0.00005*topo_compliance  + topo_stress
 
 def optimize(in_picklename, in_opt_problem, in_optimizer, in_qvals, in_epsilon,
              in_ks_parameter, in_design_mass, in_design_freq, in_design_stress,
