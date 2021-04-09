@@ -9,6 +9,8 @@ This script executes one of the following the topology optimization problems:
     - [comp_min_massfreqstress_constr]: compliance minimization, mass, stress and freq constrained
     - [stress_min_mass_constr] : stress minimization, mass constrained
     - [mass_min_stress_constr]: mass minimization, stress constrained
+    - [stress_min_comp_max_mass_constr]: multiobj compliance max, stress min, mass constrained
+    - [stress_min_masscomp_constr]: stress minimization, mass and compliance constraint
 """
 
 import numpy as np
@@ -74,7 +76,7 @@ def optimize(in_picklename, in_opt_problem, in_optimizer, in_qvals, in_epsilon,
     opt_choices_2d = [
         'comp_min_mass_constr', 'comp_min_massfreq_constr',
         'comp_min_massstress_constr', 'comp_min_massfreqstress_constr',
-        'stress_min_mass_constr', 'mass_min_stress_constr','stress_min_comp_max_mass_constr']
+        'stress_min_mass_constr', 'mass_min_stress_constr','stress_min_comp_max_mass_constr','stress_min_masscomp_constr']
 
     opt_choices_3d = ['comp_min_mass_constr',
     'comp_min_massstress_constr', 'mass_min_stress_constr']
@@ -398,6 +400,47 @@ def optimize(in_picklename, in_opt_problem, in_optimizer, in_qvals, in_epsilon,
             # Set up problem info for output
             prob_info = 'mass-{:.2f}'.format(in_design_mass)
 
+        elif in_opt_problem == 'stress_min_masscomp_constr':
+
+            # Check inputs
+            if in_design_mass is None:
+                raise ValueError("\ndesign_mass must be specified!\n")
+
+            if in_design_stress is None:
+                raise ValueError("\ndesign_stress must be specified!\n")
+
+            if in_stress_as_fraction:
+
+                analysis = Analysis(conn, dof, X, force, r0,
+                    C, density, in_qval, in_epsilon, in_ks_parameter)
+                x_full = np.ones(nnodes)
+                stress_full = np.max(analysis.nodal_stress(x_full))
+                design_stress = in_design_stress*stress_full
+
+            else:
+                design_stress = in_design_stress
+
+            # Save to pkl file for postprocess' purpose
+            prob_pkl['design_stress'] = design_stress
+
+            # Create analysis object
+            analysis = Analysis(conn, dof, X, force, r0,
+                    C, density, in_qval, in_epsilon, in_ks_parameter,
+                    compute_stress=True, compute_mass=True, compute_comp = True, design_stress=design_stress)
+
+            # Define openmdao problem
+            prob.model.add_subsystem('topo', analysis)
+            prob.model.connect('indeps.x', 'topo.x')
+            x_full = np.ones(nnodes)
+            full_mass = analysis.mass(x_full)
+            prob.model.add_design_var('indeps.x', lower=1e-3, upper=1.0)
+            prob.model.add_objective('topo.ks_nodal_stress', scaler=1.0)
+            prob.model.add_constraint('topo.m', upper=full_mass*in_design_mass)
+            prob.model.add_constraint('topo.c', equals= 600.0 )
+
+            # Set up problem info for output
+            prob_info = 'mass-{:.2f}'.format(in_design_mass)
+
         elif in_opt_problem == 'mass_min_stress_constr':
 
             # Check inputs
@@ -642,6 +685,12 @@ def optimize(in_picklename, in_opt_problem, in_optimizer, in_qvals, in_epsilon,
         con1 = prob.get_val('topo.m')[0] / (full_mass*in_design_mass) - 1.0
         cons = [con1]
 
+    elif in_opt_problem == 'stress_min_masscomp_constr':
+        obj = prob.get_val('topo.ks_nodal_stress')[0]
+        con1 = prob.get_val('topo.m')[0] / (full_mass*in_design_mass) - 1.0
+        con2 = prob.get_val('topo.c')[0]
+        cons = [con1, con2]
+
     elif in_opt_problem == 'mass_min_stress_constr':
         obj = prob.get_val('topo.m')[0]
         con1 = prob.get_val('topo.ks_nodal_stress')[0]  - 1.0
@@ -675,7 +724,7 @@ if __name__ == '__main__':
     p.add_argument('opt_problem', type=str, choices=[
         'comp_min_mass_constr', 'comp_min_massfreq_constr',
         'comp_min_massstress_constr', 'comp_min_massfreqstress_constr',
-        'stress_min_mass_constr', 'mass_min_stress_constr', 'stress_min_comp_max_mass_constr'])
+        'stress_min_mass_constr', 'mass_min_stress_constr', 'stress_min_comp_max_mass_constr', 'stress_min_masscomp_constr'])
     p.add_argument('optimizer', type=str, choices=['ParOpt', 'SNOPT', 'IPOPT'])
     p.add_argument('--qval', nargs='*', type=float, default=[5.0])
     p.add_argument('--epsilon', type=float, default=0.1)
