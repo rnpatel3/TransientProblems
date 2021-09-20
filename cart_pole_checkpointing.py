@@ -266,6 +266,8 @@ class CartPole(ParOpt.Problem):
         res[state] = 1.0 # df/du
         J = np.zeros((4, 4), dtype=ParOpt.dtype)
 
+        checkpoints = np.arange(0,40) #Declare which states are the checkpoints        
+
         # Integrate the adjoint in reverse
         for i in range(len(t)-1, 0, -1):
             # Set alpha and the qdot values
