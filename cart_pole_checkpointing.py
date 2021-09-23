@@ -208,7 +208,8 @@ class CartPole(ParOpt.Problem):
 
         # Set the initial conditions.
         q[0,:] = 0.0
-        checkpoints = np.arange(0,40) #Declare which states are the checkpoints
+        q_i_prev = np.zeros((1,4), dtype=ParOpt.dtype)
+        checkpoints = np.arange(0,40)
                                 
         
         # Compute the residual and Jacobian
@@ -218,24 +219,25 @@ class CartPole(ParOpt.Problem):
         # Integrate forward in time
         for i in range(1, len(t)):
             # Copy the starting point for the first iteration
-            q[i,:] = q[i-1,:]
+            q[i,:] = q_i_prev
 
             # Solve the nonlinear equations for q[i]
             for j in range(self.max_newton_iters):
                 # Compute the approximate value of the velocities
                 alpha = 0.5
-                qi = alpha*(q[i,:] + q[i-1,:]) #the next state requires the previous one, so we need to save all 
+                qi = alpha*(q[i,:] + q_i_prev)
                 beta = 1.0/(t[i] - t[i-1])
-                qdot = beta*(q[i,:] - q[i-1,:])
+                qdot = beta*(q[i,:] - q_i_prev)
 
                 self.computeResidual(qi, qdot, u[i-1], res)
                 self.computeJacobian(alpha, beta, qi, qdot, u[i-1], J)
                 update = np.linalg.solve(J, res)
-                if i in checkpoints:
-                    q[i,:] -= update
+                
+                q[i,:] -= update  #<-- Figure out how to handle NOT storing all these here
 
                 rnorm = np.sqrt(np.dot(res, res))
                 if rnorm < self.newton_tol:
+                    q_i_prev = q[i,:] #Store previous state to use in the next forward integration
                     break
 
         return q
@@ -265,8 +267,6 @@ class CartPole(ParOpt.Problem):
         res = np.zeros(4, dtype=ParOpt.dtype)
         res[state] = 1.0 # df/du
         J = np.zeros((4, 4), dtype=ParOpt.dtype)
-
-        checkpoints = np.arange(0,40) #Declare which states are the checkpoints        
 
         # Integrate the adjoint in reverse
         for i in range(len(t)-1, 0, -1):
