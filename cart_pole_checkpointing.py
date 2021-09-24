@@ -72,7 +72,7 @@ class CartPole(ParOpt.Problem):
         self.h = np.zeros(t.shape[0] - 1)
         self.h = self.t[1:] - self.t[:-1]
 
-        self.max_newton_iters = 10
+        self.max_newton_iters = 100
         self.newton_tol = 1e-8
         self.fobj_scale = 0.01
         self.con_scale = 10.0
@@ -106,7 +106,7 @@ class CartPole(ParOpt.Problem):
 
         # Compute the full trajectory based on the input forces
         self.q = self.computeTrajectory(self.t, x[:], 0, len(self.t))
-
+        print("checkpoint states (objcon): ", self.checkpoint_states)
         # Compute the constraints
         #print("q = ", self.q)
         con[0] = self.q[-1, 0] - 1.0 # q1 = 1.0
@@ -227,6 +227,7 @@ class CartPole(ParOpt.Problem):
             if i == 0:
                 q_i_temp = q_i_prev
             elif i==start:
+                print("checkpoint states (traj): ", self.checkpoint_states)
                 q_i_temp = self.checkpoint_states[0][np.where(self.checkpoints==start)[0].item()]
             else:
                 q_i_temp = q_i_prev
@@ -244,11 +245,14 @@ class CartPole(ParOpt.Problem):
                 update = np.linalg.solve(J, res)
                 
                 q_i_temp -= update
-
+                #print("checkpoints", self.checkpoints) Properly loads checkpoint states here
                 rnorm = np.sqrt(np.dot(res, res))
+                #print("rnorm: ", rnorm) !!!***!!! There is a Problem with the rnorm not getting below  newton_tol
                 if rnorm < self.newton_tol:
                     q_i_prev = q_i_temp #Store previous state to use in the next forward integration
+                    print("checkpoints", self.checkpoints)
                     if i in self.checkpoints:
+                        print("Adding to stored states")
                         self.checkpoint_states = np.append(self.checkpoint_states,np.reshape(q_i_prev,(1,4)))
                     break
 
@@ -280,7 +284,7 @@ class CartPole(ParOpt.Problem):
         res[state] = 1.0 # df/du
         J = np.zeros((4, 4), dtype=ParOpt.dtype)
         q_i_prev = np.zeros((1,4), dtype=ParOpt.dtype)
-
+        self.computeTrajectory(t, u, 0, len(t)-1)
         # Integrate the adjoint in reverse
         for i in range(len(t)-1, 0, -1):
             #Get q[i]
