@@ -10,7 +10,8 @@ vertical and at rest.
 import os
 import numpy as np
 import mpi4py.MPI as MPI
-from paropt import ParOpt
+import copy
+#from paropt import ParOpt
 
 
 def generate_jacobian():
@@ -55,16 +56,14 @@ def generate_jacobian():
 
     return
 
-class CartPole(ParOpt.Problem):
+#class CartPole(ParOpt.Problem):
+class CartPole:
     def __init__(self, t, m1=1.0, m2=0.3, L=0.5):
         self.m1 = m1
         self.m2 = m2
         self.L = L
         self.g = 9.81
         self.t = t
-        self.numCheckpoints = 40
-        self.checkpoints = np.arange(0,40)
-        self.checkpoint_states = np.zeros((1,4))
 
         self.iter_counter = 0
 
@@ -72,7 +71,7 @@ class CartPole(ParOpt.Problem):
         self.h = np.zeros(t.shape[0] - 1)
         self.h = self.t[1:] - self.t[:-1]
 
-        self.max_newton_iters = 100
+        self.max_newton_iters = 10
         self.newton_tol = 1e-8
         self.fobj_scale = 0.01
         self.con_scale = 10.0
@@ -82,8 +81,8 @@ class CartPole(ParOpt.Problem):
         ncon = 4
 
         # Initialize the base class
-        nineq = 0
-        super(CartPole, self).__init__(MPI.COMM_WORLD, nvars, ncon, nineq)
+        #nineq = 0
+        #super(CartPole, self).__init__(MPI.COMM_WORLD, nvars, ncon, nineq)
 
         return
 
@@ -99,17 +98,16 @@ class CartPole(ParOpt.Problem):
         # Evaluate the objective and constraints
 
         fail = 0
-        con = np.zeros(4, dtype=ParOpt.dtype)
+        #con = np.zeros(4, dtype=ParOpt.dtype)
+        con = np.zeros(4, dtype=x.dtype)
 
         # Compute the sum square of the weights
         fobj = self.fobj_scale*np.sum(self.h*x[:]**2)
 
         # Compute the full trajectory based on the input forces
-        print('control force x = ', x[:])
-        self.q = self.computeTrajectory(self.t, x[:], 1, len(self.t))
-        print("checkpoint states (objcon): ", self.checkpoint_states)
+        self.q = self.computeTrajectory(self.t, x[:])
+
         # Compute the constraints
-        #print("q = ", self.q)
         con[0] = self.q[-1, 0] - 1.0 # q1 = 1.0
         con[1] = self.q[-1, 1] - np.pi # q2 = np.pi
         con[2] = self.q[-1, 2] # qdot(q1) = 0
@@ -130,7 +128,8 @@ class CartPole(ParOpt.Problem):
         g[:] = 2.0*self.fobj_scale*self.h*x[:]
 
         # Create a vector to store the derivative of the constraints
-        dfdx = np.zeros(self.t.shape, dtype=ParOpt.dtype)
+        #dfdx = np.zeros(self.t.shape, dtype=ParOpt.dtype)
+        dfdx = np.zeros(self.t.shape, dtype=x.dtype)
         for state in range(4):
             self.computeAdjointDeriv(self.t, self.q, x[:], state, dfdx)
             A[state][:] = self.con_scale*dfdx
@@ -142,20 +141,19 @@ class CartPole(ParOpt.Problem):
         Compute the residual of the system dynamics.
         """
         # q = [q1, q2, q1dot, q2dot]
-        #print("q = ", q)
-        res[0] = q[0][2] - qdot[0][0]
-        res[1] = q[0][3] - qdot[0][1]
+        res[0] = q[2] - qdot[0]
+        res[1] = q[3] - qdot[1]
 
         # Compute the residual for the first equation of motion
-        res[2] = ((self.m1 + self.m2*(1.0 - np.cos(q[0][1])**2))*qdot[0][2] -
-            (self.L*self.m2*np.sin(q[0][1])*q[0][3]**2 + u +
-            self.m2*self.g*np.cos(q[0][1])*np.sin(q[0][1])))
+        res[2] = ((self.m1 + self.m2*(1.0 - np.cos(q[1])**2))*qdot[2] -
+            (self.L*self.m2*np.sin(q[1])*q[3]**2 + u +
+            self.m2*self.g*np.cos(q[1])*np.sin(q[1])))
 
         # Compute the residual for the second equation of motion
-        res[3] = (self.L*(self.m1 + self.m2*(1.0 - np.cos(q[0][1])**2))*qdot[0][3] +
-            (self.L*self.m2*np.cos(q[0][1])*np.sin(q[0][1])*q[0][3]**2 +
-            u*np.cos(q[0][1]) +
-            (self.m1 + self.m2)*self.g*np.sin(q[0][1])))
+        res[3] = (self.L*(self.m1 + self.m2*(1.0 - np.cos(q[1])**2))*qdot[3] +
+            (self.L*self.m2*np.cos(q[1])*np.sin(q[1])*q[3]**2 +
+            u*np.cos(q[1]) +
+            (self.m1 + self.m2)*self.g*np.sin(q[1])))
         return
 
     def computeJacobian(self, alpha, beta, q, qdot, u, J):
@@ -168,16 +166,16 @@ class CartPole(ParOpt.Problem):
         J[0,2] = alpha
         J[1,1] = -beta
         J[1,3] = alpha
-        J[2,1] = alpha*(self.m2*(-q[0][3]**2*self.L*np.cos(q[0][1]) +
-                                 qdot[0][2]*np.sin(2*q[0][1]) - self.g*np.cos(2*q[0][1])))
-        J[2,2] = beta*(1.0*self.m1 + 1.0*self.m2*np.sin(q[0][1])**2)
-        J[2,3] = -2*alpha*q[0][3]*self.L*self.m2*np.sin(q[0][1])
-        J[3,1] = alpha*((q[0][3]**2*self.L*self.m2*np.cos(2*q[0][1]) +
-                         qdot[0][3]*self.L*self.m2*np.sin(2*q[0][1]) +
-                         self.g*self.m1*np.cos(q[0][1]) +
-                         self.g*self.m2*np.cos(q[0][1]) - u*np.sin(q[0][1])))
-        J[3,3] = (alpha*(q[0][3]*self.L*self.m2*np.sin(2*q[0][1])) +
-                  beta*self.L*(self.m1 + self.m2*np.sin(q[0][1])**2))
+        J[2,1] = alpha*(self.m2*(-q[3]**2*self.L*np.cos(q[1]) +
+                                 qdot[2]*np.sin(2*q[1]) - self.g*np.cos(2*q[1])))
+        J[2,2] = beta*(1.0*self.m1 + 1.0*self.m2*np.sin(q[1])**2)
+        J[2,3] = -2*alpha*q[3]*self.L*self.m2*np.sin(q[1])
+        J[3,1] = alpha*((q[3]**2*self.L*self.m2*np.cos(2*q[1]) +
+                         qdot[3]*self.L*self.m2*np.sin(2*q[1]) +
+                         self.g*self.m1*np.cos(q[1]) +
+                         self.g*self.m2*np.cos(q[1]) - u*np.sin(q[1])))
+        J[3,3] = (alpha*(q[3]*self.L*self.m2*np.sin(2*q[1])) +
+                  beta*self.L*(self.m1 + self.m2*np.sin(q[1])**2))
 
         return
 
@@ -185,9 +183,9 @@ class CartPole(ParOpt.Problem):
         """
         Use complex-step to verify the Jacobian matrix
         """
-        q = np.random.uniform(size=(1,4))
-        qdot = np.random.uniform(size=(1,4))
-        p = np.random.uniform(size=(4))
+        q = np.random.uniform(size=4)
+        qdot = np.random.uniform(size=4)
+        p = np.random.uniform(size=4)
         u = -1.72
 
         alpha = 0.154
@@ -203,7 +201,7 @@ class CartPole(ParOpt.Problem):
         print('Relative error: ', (Jp - Jpc)/Jpc)
         return
 
-    def computeTrajectory(self, t, u, start, end):
+    def computeTrajectory(self, t, u):
         """
         Given the input control force u[i] for t[i] = 0, to t final,
         compute the trajectory.
@@ -211,63 +209,58 @@ class CartPole(ParOpt.Problem):
 
         # Allocate space for the state variables
         #q = np.zeros((len(t), 4), dtype=ParOpt.dtype)
+        q = np.zeros((len(t), 4))
 
         # Set the initial conditions.
-        #q[0,:] = 0.0
-        q_i_prev = np.zeros((1,4), dtype=ParOpt.dtype)
+        q[0,:] = 0.0
+        q_i_prev = np.zeros(4)
         #checkpoints = np.arange(0,40)
                                 
         
         # Compute the residual and Jacobian
-        res = np.zeros(4, dtype=ParOpt.dtype)
-        J = np.zeros((4, 4), dtype=ParOpt.dtype)
+        #res = np.zeros(4, dtype=ParOpt.dtype)
+        #J = np.zeros((4, 4), dtype=ParOpt.dtype)
+        res = np.zeros(4)
+        J = np.zeros((4, 4))
 
         # Integrate forward in time
-        for i in range(start, end):
-            # Copy the starting point for the first iteration, loading checkpoint states
-            print("i =", i)
-            if i == 0:
-                q_i_temp = q_i_prev
-                #self.verifyJacobian()
-            elif i==start:
-                print("checkpoint states (traj): ", self.checkpoint_states)
-                q_i_temp = self.checkpoint_states[0][np.where(self.checkpoints==start)[0].item()]
-                
-            else:
-                print("checkpoint states (traj): ", self.checkpoint_states)
-                #print("qi_prev: ", q_i_prev)
-                q_i_temp = np.reshape(q_i_prev, (1,4))
+        for i in range(1, len(t)):
+            # Copy the starting point for the first iteration
+            q[i,:] = q[i-1,:]
+            q_i_temp = copy.copy(q_i_prev)
 
             # Solve the nonlinear equations for q[i]
-            #print("state (i) = ", i)
             for j in range(self.max_newton_iters):
                 # Compute the approximate value of the velocities
+                print("q_i_prev ", q_i_prev)
+                print("difference = ", q_i_prev-q[i-1,:]) #q_i_prev is not the same as q[i-1,:]... ???
                 alpha = 0.5
-                qi = alpha*(q_i_temp + q_i_prev)
+                qi = alpha*(q[i,:] + q[i-1,:])
                 beta = 1.0/(t[i] - t[i-1])
-                qdot = beta*(q_i_temp - q_i_prev)
-                #print("q = ", qi)    
-                self.computeResidual(qi, qdot, u[i-1], res)
-                self.computeJacobian(alpha, beta, qi, qdot, u[i-1], J)
+                qdot = beta*(q[i,:] - q[i-1,:])
                 
+                qi_test = alpha*(q_i_temp+q_i_prev)
+                qdot_test = beta*(q_i_temp-q_i_prev)
+                
+                
+
+                self.computeResidual(qi_test, qdot_test, u[i-1], res)
+                self.computeJacobian(alpha, beta, qi_test, qdot_test, u[i-1], J)
                 update = np.linalg.solve(J, res)
-                #print(update)
+                print("update", update)
+                q[i,:] -= update
                 q_i_temp -= update
-                #print("checkpoints", self.checkpoints) Properly loads checkpoint states here
+                print('q[i,:] ', q[i,:])
+                print('q_i_temp ', q_i_temp)
                 rnorm = np.sqrt(np.dot(res, res))
-                #print("rnorm: ", rnorm) #!!!***!!! There is a Problem with the rnorm not getting below  newton_tol
+                print("rnorm-ntol: ", rnorm-self.newton_tol)
+                
                 if rnorm < self.newton_tol:
-                    q_i_prev = q_i_temp #Store previous state to use in the next forward integration
-                    print("checkpoints", self.checkpoints)
-                    if i in self.checkpoints:
-                        print("Adding to stored states")
-                        print("checkpoint states: ", self.checkpoint_states)
-                        print("States to add: ", q_i_prev)
-                        self.checkpoint_states = np.append(self.checkpoint_states,np.reshape(q_i_prev, (1,4)),axis=0)
-                        print("new checkpoint states: ", self.checkpoint_states)
+                    print('updating prev')
+                    q_i_prev = q_i_temp[:]
                     break
-            #print("q_i_prev = ", q_i_prev)
-        return q_i_temp #Returns q{i-1} (same as q_i_final)
+
+        return q
 
     def computeAdjointDeriv(self, t, q, u, state, dfdx):
         """
@@ -289,30 +282,21 @@ class CartPole(ParOpt.Problem):
         """
         # Zero-out the contributions to the state variables
         dfdx[:] = 0.0
-        #print("q = ", q)
 
         # Compute the residual and Jacobian
-        res = np.zeros(4, dtype=ParOpt.dtype)
+        #res = np.zeros(4, dtype=ParOpt.dtype)
+        res = np.zeros(4)
         res[state] = 1.0 # df/du
-        J = np.zeros((4, 4), dtype=ParOpt.dtype)
-        q_i_prev = np.zeros((1,4), dtype=ParOpt.dtype)
-        self.computeTrajectory(t, u, 1, len(t)-1)
+        #J = np.zeros((4, 4), dtype=ParOpt.dtype)
+        J = np.zeros((4, 4))
+
         # Integrate the adjoint in reverse
         for i in range(len(t)-1, 0, -1):
-            #Get q[i]
-            if i == len(t)-1:
-                q_i = q         #At the last step, get the final states from the previous run of computeTrajectory
-            else:
-                q_i = q_i_prev
-            #Get q[i-1]
-            lastChkpnt = self.checkpoints[self.checkpoints < i].max() #Find previous checkpoint state
-            q_i_prev = self.computeTrajectory(t, u,lastChkpnt,i)
-            
             # Set alpha and the qdot values
             alpha = 0.5
-            qi = alpha*(q_i + q_i_prev)
+            qi = alpha*(q[i,:] + q[i-1,:])
             beta = 1.0/(t[i] - t[i-1])
-            qdot = beta*(q_i - q_i_prev)
+            qdot = beta*(q[i,:] - q[i-1,:])
 
             # Compute the Jacobian matrix
             self.computeJacobian(alpha, beta, qi, qdot, u[i-1], J)
@@ -390,9 +374,11 @@ class CartPole(ParOpt.Problem):
 # Create the
 n = 40
 t = np.linspace(0, 2.0, n)
+u = np.ones(40)
 problem = CartPole(t)
+problem.computeTrajectory(t, u)
 
-problem.checkGradients(1e-5)
+#problem.checkGradients(1e-5)
 
 filename = 'paropt.out'
 options = {
@@ -417,11 +403,11 @@ options = {
     'tr_max_iterations': 200
     }
 
-opt = ParOpt.Optimizer(problem, options)
+#opt = ParOpt.Optimizer(problem, options)
 
-# Set a new starting point
-opt.optimize()
-x, z, zw, zl, zu = opt.getOptimizedPoint()
+## Set a new starting point
+#opt.optimize()
+#x, z, zw, zl, zu = opt.getOptimizedPoint()
 
-# Visualize the final design
-problem.visualize(x, skip=1)
+## Visualize the final design
+#problem.visualize(x, skip=1)
