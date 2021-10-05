@@ -11,6 +11,7 @@ import os
 import numpy as np
 import mpi4py.MPI as MPI
 from paropt import ParOpt
+import copy
 
 
 def generate_jacobian():
@@ -226,17 +227,18 @@ class CartPole(ParOpt.Problem):
         for i in range(start, end):
             # Copy the starting point for the first iteration, loading checkpoint states
             print("i =", i)
-            if i == 0:
-                q_i_temp = q_i_prev
+            if i == 1:
+                q_i_temp = copy.copy(q_i_prev)
                 #self.verifyJacobian()
             elif i==start:
-                print("checkpoint states (traj): ", self.checkpoint_states)
-                q_i_temp = self.checkpoint_states[0][np.where(self.checkpoints==start)[0].item()]
+                # print("checkpoint states (traj): ", self.checkpoint_states)
+                q_i_temp = self.checkpoint_states[np.where(self.checkpoints==start)[0].item()][:]
+                print("q_i_temp, chk: ", q_i_temp)
                 
             else:
                 print("checkpoint states (traj): ", self.checkpoint_states)
                 #print("qi_prev: ", q_i_prev)
-                q_i_temp = np.reshape(q_i_prev, (1,4))
+                q_i_temp = copy.copy(q_i_prev)
 
             # Solve the nonlinear equations for q[i]
             #print("state (i) = ", i)
@@ -255,9 +257,9 @@ class CartPole(ParOpt.Problem):
                 q_i_temp -= update
                 #print("checkpoints", self.checkpoints) Properly loads checkpoint states here
                 rnorm = np.sqrt(np.dot(res, res))
-                #print("rnorm: ", rnorm) #!!!***!!! There is a Problem with the rnorm not getting below  newton_tol
+                print("rnorm: ", rnorm) #!!!***!!! There is a Problem with the rnorm not getting below  newton_tol
                 if rnorm < self.newton_tol:
-                    q_i_prev = q_i_temp #Store previous state to use in the next forward integration
+                    q_i_prev = np.reshape(q_i_temp[:],(1,4)) #Store previous state to use in the next forward integration
                     print("checkpoints", self.checkpoints)
                     if i in self.checkpoints:
                         print("Adding to stored states")
