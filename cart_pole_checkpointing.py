@@ -63,7 +63,7 @@ class CartPole(ParOpt.Problem):
         self.L = L
         self.g = 9.81
         self.t = t
-        self.numCheckpoints = 40
+        #self.numCheckpoints = 40
         self.checkpoints = np.array([0,10,20,30])
         self.checkpoint_states = np.array([[]])
         self.iter_counter = 0
@@ -266,12 +266,13 @@ class CartPole(ParOpt.Problem):
                         print("checkpoint states: ", self.checkpoint_states)
                         print("States to add: ", q_i_prev)
                         if i==0:
+                            q_i_prev = np.zeros((1,4),dtype=ParOpt.dtype())
                             self.checkpoint_states = np.reshape(q_i_prev,(1,4))
                         else:
                             self.checkpoint_states = np.append(self.checkpoint_states,np.reshape(q_i_prev, (1,4)),axis=0)
                         print("new checkpoint states: ", self.checkpoint_states)
                     break
-            #print("q_i_prev = ", q_i_prev)
+            print("q_i_prev = ", q_i_prev)
         return q_i_temp #Returns q{i-1} (same as q_i_final)
 
     def computeAdjointDeriv(self, t, q, u, state, dfdx):
@@ -306,7 +307,7 @@ class CartPole(ParOpt.Problem):
         for i in range(len(t)-1, 0, -1):
             #Get q[i]
             if i == len(t)-1:
-                q_i = q         #At the last step, get the final states from the previous run of computeTrajectory
+                q_i = copy.copy(q_i_prev)        #At the last step, get the final states from the previous run of computeTrajectory
             else:
                 q_i = copy.copy(q_i_prev)
             #Get q[i-1]
@@ -318,13 +319,14 @@ class CartPole(ParOpt.Problem):
             qi = alpha*(q_i + q_i_prev)
             beta = 1.0/(t[i] - t[i-1])
             qdot = beta*(q_i - q_i_prev)
-
+            print("qi: ", q_i)
+            print("qi prev: ", q_i_prev)
             # Compute the Jacobian matrix
             self.computeJacobian(alpha, beta, qi, qdot, u[i-1], J)
-
+            #print("jac: ", J) Error in jacobian and res
             # Compute the adjoint variables
             adjoint = -np.linalg.solve(J.T, res)
-            print("adjoint: ", adjoint)
+            #print("adjoint: ", adjoint) error in adjoint vars
 
             # Compute the total derivative
             dfdx[i-1] += -adjoint[2] + adjoint[3]*np.cos(qi[0][1])
