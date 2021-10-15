@@ -66,6 +66,7 @@ class CartPole(ParOpt.Problem):
         #self.numCheckpoints = 40
         self.checkpoints = np.array([0,10,20,30])
         self.checkpoint_states = np.array([[]])
+        self.checkpoint_prev_states = np.array([[]])
         self.iter_counter = 0
 
         # Compute the weights for the objective function
@@ -232,8 +233,12 @@ class CartPole(ParOpt.Problem):
             elif i==start:
                 # print("checkpoint states (traj): ", self.checkpoint_states)
                 q_i_temp = copy.copy(self.checkpoint_states[np.where(self.checkpoints==start)[0].item()][:])
-                print("checkpoint states: ", self.checkpoint_states)
-                print("q_i_temp, chk: ", q_i_temp)
+                q_i_temp = np.reshape(q_i_temp, (1,4))
+                q_i_prev = copy.copy(self.checkpoint_prev_states[np.where(self.checkpoints==start)[0].item()][:])
+                q_i_prev = np.reshape(q_i_prev, (1,4))
+                #print("checkpoint states: ", self.checkpoint_states)
+                #print("q_i_temp, chk: ", q_i_temp)
+                #print("q_i_prev, chk: ", q_i_prev)
                 
             else:
                 #print("checkpoint states (traj): ", self.checkpoint_states)
@@ -241,7 +246,7 @@ class CartPole(ParOpt.Problem):
                 q_i_temp = copy.copy(q_i_prev)
 
             # Solve the nonlinear equations for q[i]
-            print("state (i) = ", i)
+            #print("state (i) = ", i)
             for j in range(self.max_newton_iters):
                 # Compute the approximate value of the velocities
                 alpha = 0.5
@@ -259,20 +264,30 @@ class CartPole(ParOpt.Problem):
                 rnorm = np.sqrt(np.dot(res, res))
                 #print("rnorm: ", rnorm) 
                 if rnorm < self.newton_tol:
-                    q_i_prev = np.reshape(q_i_temp[:],(1,4)) #Store previous state to use in the next forward integration
                     #print("checkpoints", self.checkpoints)
                     if i in self.checkpoints and store:
+                        
                         #print("Adding to stored states")
-                        print("checkpoint states: ", self.checkpoint_states)
-                        print("States to add: ", q_i_prev)
+                        #print("checkpoint states: ", self.checkpoint_states) works
+                        #print("States to add: ", q_i_temp) works
                         if i==0:
                             q_i_prev = np.zeros((1,4),dtype=ParOpt.dtype())
                             self.checkpoint_states = np.reshape(q_i_prev,(1,4))
+                            self.checkpoint_prev_states = np.reshape(q_i_prev, (1,4))
                         else:
-                            self.checkpoint_states = np.append(self.checkpoint_states,np.reshape(q_i_prev, (1,4)),axis=0)
-                        print("new checkpoint states: ", self.checkpoint_states)
+                            self.checkpoint_states = np.append(self.checkpoint_states,np.reshape(q_i_temp, (1,4)),axis=0)
+                            self.checkpoint_prev_states = np.append(self.checkpoint_prev_states,np.reshape(q_i_prev, (1,4)), axis=0) #Store previous state to use in the next forward integration
+                        #print("new checkpoint states: ", self.checkpoint_states) All of these work below
+                        #print("Previous checkpoint state to add: ", q_i_prev)
+                        #print("Prev checkpoint states: ", self.checkpoint_prev_states)
+
+                    if i == 0:
+                        q_i_prev = np.zeros((1,4),dtype=ParOpt.dtype)
+                    else:
+                        q_i_prev = np.reshape(q_i_temp[:],(1,4))
+                        #rint("q_i_prev: ", q_i_prev)
                     break
-            print("q_i_prev = ", q_i_prev)
+            #print("q_i_prev = ", q_i_prev)
         return q_i_temp #Returns q{i-1} (same as q_i_final)
 
     def computeAdjointDeriv(self, t, q, u, state, dfdx):
@@ -295,7 +310,7 @@ class CartPole(ParOpt.Problem):
         """
         # Zero-out the contributions to the state variables
         dfdx[:] = 0.0
-        print("checkpoint states = ", self.checkpoint_states)
+        #print("checkpoint states = ", self.checkpoint_states)
 
         # Compute the residual and Jacobian
         res = np.zeros(4, dtype=ParOpt.dtype)
@@ -319,8 +334,8 @@ class CartPole(ParOpt.Problem):
             qi = alpha*(q_i + q_i_prev)
             beta = 1.0/(t[i] - t[i-1])
             qdot = beta*(q_i - q_i_prev)
-            print("qi: ", q_i)
-            print("qi prev: ", q_i_prev)
+            #print("qi: ", q_i)
+            #print("qi prev: ", q_i_prev)
             # Compute the Jacobian matrix
             self.computeJacobian(alpha, beta, qi, qdot, u[i-1], J)
             #print("jac: ", J) Error in jacobian and res
@@ -421,7 +436,7 @@ options = {
     'tr_adaptive_gamma_update': False,
     'tr_accept_step_strategy': 'penalty_method',
     'tr_use_soc': False,
-    'tr_soc_use_quad_model': True,
+    #'tr_soc_use_quad_model': True,
     'tr_max_iterations': 200
     }
 
