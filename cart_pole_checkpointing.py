@@ -230,6 +230,10 @@ class CartPole(ParOpt.Problem):
             if i == 1 or (i==0 and store):
                 q_i_temp = copy.copy(q_i_prev)
                 #self.verifyJacobian()
+            elif i==0 and i==start and i==end-1:
+                q_i_prev = copy.copy(self.checkpoint_prev_states[np.where(self.checkpoints==start)[0].item()][:])
+                q_i_prev = np.reshape(q_i_prev, (1,4))
+                return q_i_prev
             elif i==start:
                 # print("checkpoint states (traj): ", self.checkpoint_states)
                 q_i_temp = copy.copy(self.checkpoint_states[np.where(self.checkpoints==start)[0].item()][:])
@@ -239,6 +243,7 @@ class CartPole(ParOpt.Problem):
                 #print("checkpoint states: ", self.checkpoint_states)
                 #print("q_i_temp, chk: ", q_i_temp)
                 #print("q_i_prev, chk: ", q_i_prev)
+
                 
             else:
                 #print("checkpoint states (traj): ", self.checkpoint_states)
@@ -334,6 +339,7 @@ class CartPole(ParOpt.Problem):
             qi = alpha*(q_i + q_i_prev)
             beta = 1.0/(t[i] - t[i-1])
             qdot = beta*(q_i - q_i_prev)
+            #print("Adjoint state (i): ", i)
             #print("qi: ", q_i)
             #print("qi prev: ", q_i_prev)
             # Compute the Jacobian matrix
@@ -436,7 +442,7 @@ options = {
     'tr_adaptive_gamma_update': False,
     'tr_accept_step_strategy': 'penalty_method',
     'tr_use_soc': False,
-    #'tr_soc_use_quad_model': True,
+    'tr_soc_use_quad_model': True,
     'tr_max_iterations': 200
     }
 
