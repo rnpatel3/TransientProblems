@@ -106,11 +106,8 @@ class CartPole(ParOpt.Problem):
         fobj = self.fobj_scale*np.sum(self.h*x[:]**2)
 
         # Compute the full trajectory based on the input forces
-        #print('control force x = ', x[:])
         self.q = self.computeTrajectory(self.t, x[:], 1, len(self.t))
-        #print("checkpoint states (objcon): ", self.checkpoint_states)
         # Compute the constraints
-        #print("q = ", self.q)
         con[0] = self.q[-1, 0] - 1.0 # q1 = 1.0
         con[1] = self.q[-1, 1] - np.pi # q2 = np.pi
         con[2] = self.q[-1, 2] # qdot(q1) = 0
@@ -142,8 +139,6 @@ class CartPole(ParOpt.Problem):
         """
         Compute the residual of the system dynamics.
         """
-        # q = [q1, q2, q1dot, q2dot]
-        #print("q = ", q)
         res[0] = q[0][2] - qdot[0][0]
         res[1] = q[0][3] - qdot[0][1]
 
@@ -210,14 +205,8 @@ class CartPole(ParOpt.Problem):
         compute the trajectory.
         """
 
-        # Allocate space for the state variables
-        #q = np.zeros((len(t), 4), dtype=ParOpt.dtype)
-
-        # Set the initial conditions.
-        #q[0,:] = 0.0
+        # Allocate space for the previous state variables
         q_i_prev = np.zeros((1,4), dtype=ParOpt.dtype)
-        #checkpoints = np.arange(0,40)
-                                
         
         # Compute the residual and Jacobian
         res = np.zeros(4, dtype=ParOpt.dtype)
@@ -225,75 +214,59 @@ class CartPole(ParOpt.Problem):
 
         # Integrate forward in time
         for i in range(start, end):
-            # Copy the starting point for the first iteration, loading checkpoint states
-            #print("i =", i)
+            # Get the starting point for the first iteration, loading checkpoint states when necessary
             if i == 1 or (i==0 and store):
                 q_i_temp = copy.copy(q_i_prev)
-                #self.verifyJacobian()
             elif i==0 and i==start and i==end-1:
                 q_i_prev = copy.copy(self.checkpoint_prev_states[np.where(self.checkpoints==start)[0].item()][:])
                 q_i_prev = np.reshape(q_i_prev, (1,4))
                 return q_i_prev
             elif i==start:
-                # print("checkpoint states (traj): ", self.checkpoint_states)
                 q_i_temp = copy.copy(self.checkpoint_states[np.where(self.checkpoints==start)[0].item()][:])
                 q_i_temp = np.reshape(q_i_temp, (1,4))
                 q_i_prev = copy.copy(self.checkpoint_prev_states[np.where(self.checkpoints==start)[0].item()][:])
                 q_i_prev = np.reshape(q_i_prev, (1,4))
-                #print("checkpoint states: ", self.checkpoint_states)
-                #print("q_i_temp, chk: ", q_i_temp)
-                #print("q_i_prev, chk: ", q_i_prev)
 
-                
             else:
-                #print("checkpoint states (traj): ", self.checkpoint_states)
-                #print("qi_prev: ", q_i_prev)
                 q_i_temp = copy.copy(q_i_prev)
 
             # Solve the nonlinear equations for q[i]
-            #print("state (i) = ", i)
             for j in range(self.max_newton_iters):
                 # Compute the approximate value of the velocities
                 alpha = 0.5
                 qi = alpha*(q_i_temp + q_i_prev)
                 beta = 1.0/(t[i] - t[i-1])
                 qdot = beta*(q_i_temp - q_i_prev)
-                #print("q = ", qi)    
+
                 self.computeResidual(qi, qdot, u[i-1], res)
                 self.computeJacobian(alpha, beta, qi, qdot, u[i-1], J)
                 
                 update = np.linalg.solve(J, res)
-                #print(update)
                 q_i_temp -= update
-                #print("checkpoints", self.checkpoints) Properly loads checkpoint states here
+                
                 rnorm = np.sqrt(np.dot(res, res))
-                #print("rnorm: ", rnorm) 
+
                 if rnorm < self.newton_tol:
-                    #print("checkpoints", self.checkpoints)
+                    #Add to checkpointed states when necessary
                     if i in self.checkpoints and store:
-                        
-                        #print("Adding to stored states")
-                        #print("checkpoint states: ", self.checkpoint_states) works
-                        #print("States to add: ", q_i_temp) works
                         if i==0:
+                            #Enforce initial conditions here if checkpointing active
                             q_i_prev = np.zeros((1,4),dtype=ParOpt.dtype())
                             self.checkpoint_states = np.reshape(q_i_prev,(1,4))
                             self.checkpoint_prev_states = np.reshape(q_i_prev, (1,4))
                         else:
                             self.checkpoint_states = np.append(self.checkpoint_states,np.reshape(q_i_temp, (1,4)),axis=0)
-                            self.checkpoint_prev_states = np.append(self.checkpoint_prev_states,np.reshape(q_i_prev, (1,4)), axis=0) #Store previous state to use in the next forward integration
-                        #print("new checkpoint states: ", self.checkpoint_states) All of these work below
-                        #print("Previous checkpoint state to add: ", q_i_prev)
-                        #print("Prev checkpoint states: ", self.checkpoint_prev_states)
 
+                            #Store previous state to use in the next forward integration
+                            self.checkpoint_prev_states = np.append(self.checkpoint_prev_states,np.reshape(q_i_prev, (1,4)), axis=0)
+                    
+                    #Otherwise enforce initial conditions here
                     if i == 0:
                         q_i_prev = np.zeros((1,4),dtype=ParOpt.dtype)
                     else:
                         q_i_prev = np.reshape(q_i_temp[:],(1,4))
-                        #rint("q_i_prev: ", q_i_prev)
                     break
-            #print("q_i_prev = ", q_i_prev)
-        return q_i_temp #Returns q{i-1} (same as q_i_final)
+        return q_i_temp #Returns q{i-1} (same as q_i_final when full trajectory run)
 
     def computeAdjointDeriv(self, t, q, u, state, dfdx):
         """
@@ -315,13 +288,13 @@ class CartPole(ParOpt.Problem):
         """
         # Zero-out the contributions to the state variables
         dfdx[:] = 0.0
-        #print("checkpoint states = ", self.checkpoint_states)
 
         # Compute the residual and Jacobian
         res = np.zeros(4, dtype=ParOpt.dtype)
         res[state] = 1.0 # df/du
         J = np.zeros((4, 4), dtype=ParOpt.dtype)
-        #q_i_prev = np.zeros((1,4), dtype=ParOpt.dtype)
+
+        #Run trajectory storing predetermined checkpoint states
         q_i_prev = self.computeTrajectory(t, u, 0, len(t), True)
         # Integrate the adjoint in reverse
         for i in range(len(t)-1, 0, -1):
@@ -329,25 +302,22 @@ class CartPole(ParOpt.Problem):
             if i == len(t)-1:
                 q_i = copy.copy(q_i_prev)        #At the last step, get the final states from the previous run of computeTrajectory
             else:
-                q_i = copy.copy(q_i_prev)
+                q_i = copy.copy(q_i_prev)       #Otherwise, when going backward, use q_i_prev as the new q[i]
+            
             #Get q[i-1]
             lastChkpnt = self.checkpoints[self.checkpoints < i].max() #Find previous checkpoint state
-            q_i_prev = self.computeTrajectory(t, u,lastChkpnt,i, False)
+            q_i_prev = self.computeTrajectory(t, u,lastChkpnt,i, False) #Run trajectory from previous checkpoint to the state we need
             
             # Set alpha and the qdot values
             alpha = 0.5
             qi = alpha*(q_i + q_i_prev)
             beta = 1.0/(t[i] - t[i-1])
             qdot = beta*(q_i - q_i_prev)
-            #print("Adjoint state (i): ", i)
-            #print("qi: ", q_i)
-            #print("qi prev: ", q_i_prev)
+
             # Compute the Jacobian matrix
             self.computeJacobian(alpha, beta, qi, qdot, u[i-1], J)
-            #print("jac: ", J) Error in jacobian and res
             # Compute the adjoint variables
             adjoint = -np.linalg.solve(J.T, res)
-            #print("adjoint: ", adjoint) error in adjoint vars
 
             # Compute the total derivative
             dfdx[i-1] += -adjoint[2] + adjoint[3]*np.cos(qi[0][1])
