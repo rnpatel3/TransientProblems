@@ -15,15 +15,16 @@ class Newmark():
         self.C = c1
         self.K = k1
         self.u = u
+        #print("u ", u)
         self.x0 = x0
         self.xdot0 = xdot0
         self.N = len(t)
         self.beta = beta
         self.gamma = gamma
-        self.x = np.zeros(len(t))
+        self.x = np.zeros((len(t),3))
         
-        self.xdot = np.zeros(len(t))
-        self.xddot = np.zeros(len(t))
+        self.xdot = np.zeros((len(t),3))
+        self.xddot = np.zeros((len(t),3))
         return
     
     def forward_integration(self):
@@ -31,8 +32,9 @@ class Newmark():
         
         A = (1/(self.beta*dt**2))*self.M + (self.gamma/(self.beta*dt))*self.C+self.K
         invA = np.linalg.inv(A)
-        
-        self.xdd[0] = np.linalg.inv(self.M) * (self.u[0]-self.C*self.xdot[0]-self.K*self.x[0])
+        #print(np.linalg.inv(self.M) * (self.u[:,0]-self.C*self.xdot[0,:]-self.K*self.x[0,:]))
+        #print(np.dot(self.C,self.xdot[0,:]))
+        self.xddot[0,:] = np.dot(np.linalg.inv(self.M),(self.u[:,0]-np.dot(self.C,self.xdot[0,:])-np.dot(self.K,self.x[0,:])))
         
         for i in range(0,self.N):
             B = self.u[i+1] + self.M*((1/(self.beta*dt**2))*
@@ -50,20 +52,21 @@ class Newmark():
         return self.x
 
 
-t = np.linspace(0, 3.0 , 600)
+t = np.linspace(0, 3.0 , 50)
 x0 = np.array([0,0,0])
 xdot0 = np.array([0,0,0])
 
 u = np.zeros((3,len(t)))
+# print("u = ", u.dtype())
 pulse  =  np.zeros(len(t))
 omega = np.pi/.29
-u[3,:] = 50*np.sin(omega*t)
+u[2,:] = 50*np.sin(omega*t)
 for j in range(0,len(t)):
     pulse[j] = np.sin(omega*t[j])
     if t[j] > np.pi/omega:
         pulse[j] = 0
 
-u[3,:] = 50*pulse;
+u[2,:] = 50*pulse;
 
 m1 = np.array([[10, 0, 0],[0, 20, 0],[0,0,30]])
 k1 = 1e3* np.array([[45, -20, -15],[-20,45,-25],[-15,-25,40]])
