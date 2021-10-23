@@ -8,6 +8,21 @@ Created on Thu Oct 21 12:09:07 2021
 import numpy as np
 import matplotlib.pylab as plt
 
+class Assembler():
+    def setVariables(self, u, udot, uddot):
+        delf.u[:] = u[:]
+        self.udot[:] = udot[:]
+        self.uddot[:] = uddot[:]
+        return
+    
+    def assembleJacobian(self, alpha, beta, gamma, res, mat):
+        res[:] = np.dot(self.K, self.u) + np.dot(self.C, self.udot) + np.dot(self.M, self.uddot)
+        mat[:] = alpha*self.K + beta*self.C + gamma*self.M
+        return 
+
+
+
+
 class Newmark():
     def __init__(self, t, x0, xdot0, u, m1, c1, k1, beta = 0.25, gamma = 0.5) :
         self.t = t
