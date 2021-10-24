@@ -138,7 +138,6 @@ m1 = np.array([[10, 0, 0],[0, 20, 0],[0, 0, 30]])
 k1 = 1e3* np.array([[45, -20, -15],[-20, 45, -25],[-15, -25, 40]])
 c1 = 3e-2*k1
 
-newmark = Newmark(t, x0, xdot0, u, m1, c1, k1)  
-xout = np.zeros((len(t),3))
+newmark = Newmark(t, x0, xdot0, u, m1, c1, k1)
 newmark.forward_integration()
 newmark.visualize_disp()
