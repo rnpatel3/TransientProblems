@@ -96,10 +96,21 @@ assembler = creator.createTACS()
 
 res = assembler.createVec()
 ans = assembler.createVec()
-mat = assembler.createSchurMat()
+# mat = assembler.createSchurMat()
+mat = assembler.createMat()
 
-# Create the preconditioner for the corresponding matrix
-pc = TACS.Pc(mat)
+# # Create the preconditioner for the corresponding matrix
+# assembler.assembleMatType(TACS.STIFFNESS_MATRIX, mat)
+# dmat = mat.getDenseMatrix()
+# print(type(dmat))
+# print(dmat)
+
+# exit(0)
+# pc = TACS.Pc(mat)
+
+# pc.factor()
+
+
 
 # This is the previous "Assembler" interface
 # class Assembler():
@@ -151,17 +162,42 @@ class Newmark():
         self.newton_iters = 100
         self.ntol = 1e-9
         #Need to apply ICs, but since they're 0, can ignore for now
+        
+        
         return
     
 
     def forward_integration(self):
         # dt =  self.t[1] - self.t[0]
-        dt = 0.005 #Fixed val for now
+        dt = 0.1 #Fixed val for now
         #assembler = Assembler(self.M, self.C, self.K)
         # res = np.zeros((3,1))
         # J = np.zeros((3, 3))
         res = assembler.createVec()
         J = assembler.createMat()
+        
+        forces = assembler.createVec()
+        forces_array = forces.getArray()
+        
+        forces_array[2::6] = 1.0
+        assembler.applyBCs(forces)
+        
+        # Create the linear solver
+
+        # # Create the preconditioner for the corresponding matrix
+        # assembler.assembleMatType(TACS.STIFFNESS_MATRIX, mat)
+        # dmat = mat.getDenseMatrix()
+        # print(type(dmat))
+        # print(dmat)
+        
+        # exit(0)
+        pc = TACS.Pc(J)
+        gmres_iters = 5
+        nrestart = 0
+        is_flexible = 0
+        gmres = TACS.KSM(mat, pc, gmres_iters, nrestart, is_flexible)
+        
+        t = self.t
 
         for i in range(0, self.N-1):
             #u = np.ones((1,3)) #Some estimate of u[i+1]
@@ -188,6 +224,7 @@ class Newmark():
             #force = np.reshape(self.u[:,i+1], (1,3)) #Need to handle forces somehow into the "residual" again
 
             for j in range(self.newton_iters):   
+                update = assembler.createVec()
                 tacs_alpha = 1.0
                 tacs_beta = self.gamma/(self.beta*dt) # Eq 5.43
                 tacs_gamma = 1.0/(self.beta*dt**2) # Eq 5.42    
@@ -196,7 +233,10 @@ class Newmark():
                 # rnorm = np.sqrt(np.dot(res.flatten(),res.flatten()))
                 
                 assembler.assembleJacobian(tacs_alpha, tacs_beta, tacs_gamma, res, J)
-                assembler.assembleRes(res)
+                #assembler.assembleRes(res) Redundant line
+                
+                res.axpy(-np.sin(t[i]), forces)
+                print("res: ", res.getArray())
                 
                 # if rnorm.all() < self.ntol:
                 #     break
@@ -204,7 +244,11 @@ class Newmark():
                 if res.norm() < self.ntol:
                     break
 
-                update = np.linalg.solve(J, res) #Need to import gmres to solve this
+                
+                gmres.setMonitor(comm, freq=1)
+                gmres.solve(res, update)
+                #print("update: ", update.getArray())
+                #update = np.linalg.solve(J, res) #Need to import gmres to solve this
                 
                 #Apply updates here
                 u.axpy(-1.0, update)
@@ -233,7 +277,7 @@ class Newmark():
         return
     
 
-t = np.linspace(0,3.0,601)
+t = np.linspace(0,1.0,11)
 #x0 = np.array([0, 0, 0])
 #xdot0 = np.array([0, 0, 0])
 x0 =  assembler.createVec()
@@ -268,4 +312,13 @@ c1.scale(3e-2)
 
 newmark = Newmark(t, x0, xdot0, u, m1, c1, k1)
 newmark.forward_integration()
+flag = (TACS.OUTPUT_CONNECTIVITY |
+        TACS.OUTPUT_NODES |
+        TACS.OUTPUT_DISPLACEMENTS |
+        TACS.OUTPUT_STRAINS)
+f5 = TACS.ToFH5(assembler, TACS.PLANE_STRESS_ELEMENT, flag)
+
+for i in range(num_steps):
+    assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
+    f5.writeToFile('panel_test%d.f5'%(i))
 #newmark.visualize_disp()
