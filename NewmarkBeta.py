@@ -29,8 +29,8 @@ creator = TACS.Creator(comm, varsPerNode)
 
 if comm.rank == 0:
     # Create the elements
-    nx = 2
-    ny = 2
+    nx = 10
+    ny = 10
     
     # Set the nodes
     nnodes = (2*nx+1)*(2*ny+1)
@@ -174,29 +174,13 @@ class Newmark():
         # res = np.zeros((3,1))
         # J = np.zeros((3, 3))
         res = assembler.createVec()
-        J = assembler.createMat()
+        J = assembler.createSchurMat()
         
         forces = assembler.createVec()
         forces_array = forces.getArray()
         
-        forces_array[2::6] = 1.0
-        assembler.applyBCs(forces)
-        
-        # Create the linear solver
-
-        # # Create the preconditioner for the corresponding matrix
-        # assembler.assembleMatType(TACS.STIFFNESS_MATRIX, mat)
-        # dmat = mat.getDenseMatrix()
-        # print(type(dmat))
-        # print(dmat)
-        
-        # exit(0)
-        pc = TACS.Pc(J)
-        gmres_iters = 5
-        nrestart = 0
-        is_flexible = 0
-        gmres = TACS.KSM(mat, pc, gmres_iters, nrestart, is_flexible)
-        
+        forces_array[1::4] = 10000
+        assembler.applyBCs(forces)        
         t = self.t
 
         for i in range(0, self.N-1):
@@ -223,7 +207,7 @@ class Newmark():
             u = assembler.createVec() #Reset u for the last time
             #force = np.reshape(self.u[:,i+1], (1,3)) #Need to handle forces somehow into the "residual" again
 
-            for j in range(self.newton_iters):   
+            for j in range(self.newton_iters):
                 update = assembler.createVec()
                 tacs_alpha = 1.0
                 tacs_beta = self.gamma/(self.beta*dt) # Eq 5.43
@@ -231,12 +215,15 @@ class Newmark():
                 
                 # assembler.assembleJacobian(tacs_alpha, tacs_beta, tacs_gamma,  force, res, J)
                 # rnorm = np.sqrt(np.dot(res.flatten(),res.flatten()))
-                
                 assembler.assembleJacobian(tacs_alpha, tacs_beta, tacs_gamma, res, J)
-                #assembler.assembleRes(res) Redundant line
+                pc = TACS.Pc(J)
+                pc.factor()
+                gmres_iters = 5
+                nrestart = 0
+                is_flexible = 0
+                gmres = TACS.KSM(J, pc, gmres_iters, nrestart, is_flexible)
                 
-                res.axpy(-np.sin(t[i]), forces)
-                print("res: ", res.getArray())
+                res.axpy(-10*t[i], forces)
                 
                 # if rnorm.all() < self.ntol:
                 #     break
@@ -245,15 +232,15 @@ class Newmark():
                     break
 
                 
-                gmres.setMonitor(comm, freq=1)
+                #gmres.setMonitor(comm, freq=1)
                 gmres.solve(res, update)
-                #print("update: ", update.getArray())
-                #update = np.linalg.solve(J, res) #Need to import gmres to solve this
                 
                 #Apply updates here
                 u.axpy(-1.0, update)
                 udot.axpy(-tacs_beta, update)
                 uddot.axpy(-tacs_gamma, update)
+                assembler.setVariables(u,udot,uddot)
+
                 # u -= np.transpose(update)
                 # udot -= tacs_beta*np.transpose(update)
                 # uddot -= tacs_gamma*np.transpose(update)
@@ -264,16 +251,20 @@ class Newmark():
             self.xdot[i+1] = udot
             self.xddot[i+1] = uddot
 
+
         return self.x
 
     def visualize_disp(self):
-        fig, ax = plt.subplots(1)
-        #Edit displacement visualization
-        ax.plot(t, self.x[1].getArray())
-        plt.xlabel('time (s)')
-        plt.ylabel('displacement (m)')
-        plt.show()
+        # fig, ax = plt.subplots(1)
+        # #Edit displacement visualization
+        # ax.plot(t, self.x[1].getArray())
+        # plt.xlabel('time (s)')
+        # plt.ylabel('displacement (m)')
+        # plt.show()
         
+        for i in range(len(self.t)):
+            assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
+            f5.writeToFile('panel_test%d.f5'%(i))
         return
     
 
@@ -318,7 +309,5 @@ flag = (TACS.OUTPUT_CONNECTIVITY |
         TACS.OUTPUT_STRAINS)
 f5 = TACS.ToFH5(assembler, TACS.PLANE_STRESS_ELEMENT, flag)
 
-for i in range(num_steps):
-    assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
-    f5.writeToFile('panel_test%d.f5'%(i))
-#newmark.visualize_disp()
+
+newmark.visualize_disp()
