@@ -73,7 +73,7 @@ for elem in range(firstElem, lastElem):
 assembler.setElementConnectivity(ptr, conn)
 
 # Create the isotropic material class
-props = constitutive.MaterialProperties(rho=2700.0, E=70e3, nu=0.3, ys=270.0)
+props = constitutive.MaterialProperties(rho=2700.0, E=70e9, nu=0.3, ys=270.0)
 
 # Create basis, constitutive, element, etc
 linear_basis = elements.LinearQuadBasis()
@@ -118,11 +118,13 @@ Xpts = X.getArray()
 
 # Get nodal locations
 k = 0
+coeff = 0.05
 for node in range(firstNode, lastNode):
     i = node % (nx + 1)
     j = node // (nx + 1)
     Xpts[k] = i*Lx/nx
     Xpts[k+1] = j*Ly/ny
+    Xpts[k+2] = np.sin(Xpts[k+1]/Lx*np.pi)*coeff*Lx
     k += 3
 
 assembler.reorderVec(X)  # Might not needed since we don't reorder the matrix
@@ -295,27 +297,29 @@ class Newmark():
         
         # Create the force vector
         forces = assembler.createVec()
-        temp = assembler.createVec()
         
         # Set the compressive force
         forces_array = forces.getArray()
-        forces_array[1::6] = -10
+        #forces_array[1::6] = -10
+        forces_array[2281::6] = -2500000000.0
         assembler.applyBCs(forces)
 
         for i in range(0, self.N-1):
             #u = np.ones((1,3)) #Some estimate of u[i+1]
             
-            if i < 2:
-                    # Initial Perturbation force out of plane
-                forces_array = forces.getArray()
-                forces_array[1::6] = -10.0
-                forces_array[1202:1322:6] = 1000.0
-                assembler.applyBCs(forces)
-            else:
-                forces_array = forces.getArray()
-                forces_array[1::6] = -10.0
-                forces_array[1202:1322:6] = 0.0
-                assembler.applyBCs(forces)
+            # if i < 3:
+            #         # Initial Perturbation force out of plane
+            #     forces_array = forces.getArray()
+            #     #forces_array[1::6] = -10000.0
+            #     forces_array[2281::6] = -2500000.0
+            #     forces_array[1202:1322:6] = 10000.0
+            #     assembler.applyBCs(forces)
+            # else:
+            #     forces_array = forces.getArray()
+            #     #forces_array[1::6] = -10000.0
+            #     forces_array[2281::6] = -2500000.0
+            #     forces_array[1202:1322:6] = 0.0
+            #     assembler.applyBCs(forces)
             
             # force_arr = forces.getArray()
             # print(force_arr)
@@ -358,7 +362,7 @@ class Newmark():
                 is_flexible = 1
                 gmres = TACS.KSM(J, pc, gmres_iters, nrestart, is_flexible)
                 
-                res.axpy(-t[i], forces)
+                res.axpy(-1.0, forces)
                 
                 # if rnorm.all() < self.ntol:
                 #     break
