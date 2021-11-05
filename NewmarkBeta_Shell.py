@@ -358,7 +358,10 @@ class Newmark():
                 is_flexible = 1
                 gmres = TACS.KSM(J, pc, gmres_iters, nrestart, is_flexible)
                 
-                res.axpy(-t[i], forces)
+                if i < 5:
+                    res.axpy(-t[i], forces)
+                else:
+                    res.axpy(-0.5, forces)
                 
                 # if rnorm.all() < self.ntol:
                 #     break
@@ -399,7 +402,7 @@ class Newmark():
         
         for i in range(len(self.t)):
             assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
-            f5.writeToFile('panel_test%d.f5'%(i))
+            f5.writeToFile('panel_test_staticload%d.f5'%(i))
         return
     
 

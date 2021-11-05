@@ -301,7 +301,7 @@ class Newmark():
         # Set the compressive force
         forces_array = forces.getArray()
         #forces_array[1::6] = -10
-        forces_array[2281::6] = -2500000000.0
+        forces_array[2281::6] = -250000000.0 #Add one more zero for complete collapse of structure
         assembler.applyBCs(forces)
 
         for i in range(0, self.N-1):
@@ -403,7 +403,7 @@ class Newmark():
         
         for i in range(len(self.t)):
             assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
-            f5.writeToFile('panel_test%d.f5'%(i))
+            f5.writeToFile('panel_test_initialDef_lessF%d.f5'%(i))
         return
     
 
