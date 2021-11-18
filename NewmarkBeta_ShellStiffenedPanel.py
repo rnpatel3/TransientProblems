@@ -8,127 +8,193 @@ Created on Thu Oct 21 12:09:07 2021
 
 import numpy as np
 import sys
+import os
 np.set_printoptions(threshold=sys.maxsize)
 import matplotlib.pylab as plt
 
 from mpi4py import MPI
-from tacs import TACS, elements, constitutive, functions
+from tacs import TACS, elements, constitutive, functions, pyTACS
 
-'''
-Create TACS Assembler
-'''
-comm = MPI.COMM_WORLD
-rank = comm.rank
-size = comm.size
-nx = 20  # number of elements in x direction
-ny = 20  # number of elements in y direction
-Lx = 1.0
-Ly = 1.0
-varsPerNode = 6
-    
-nodesPerProc = int((nx+1)*(ny+1)/size)
-elemsPerProc = int(nx*ny/size)
-numOwnedNodes = int(nodesPerProc)
-numElements = int(elemsPerProc)
-numDependentNodes = 0
+# Load structural mesh from BDF file
+tacs_comm = MPI.COMM_WORLD
 
-# Adjust for the last processor
-if (rank == size-1):
-    numOwnedNodes = (nx+1)*(ny+1) - nodesPerProc*(size-1)
-    numElements = nx*ny - elemsPerProc*(size-1)
+struct_mesh = TACS.MeshLoader(tacs_comm)
+struct_mesh.scanBDFFile("axial_stiffened_panel.bdf")
 
-assembler = TACS.Assembler.create(comm, varsPerNode,
-                                  numOwnedNodes, numElements,
-                                  numDependentNodes)
+# structOptions = {
+#     'printtimings':True,
+#     # Specify what type of elements we want in the f5
+#     'writeSolution':True,
+#     'outputElement': TACS.PLANE_STRESS_ELEMENT,
+# }
 
-'''
-Setup geometry, mesh, material and element
-'''
+# bdfFile = os.path.join(os.path.dirname(__file__), 'circ-plate-dirichlet-bcs.bdf')
+# struct_mesh = pyTACS(bdfFile, tacs_comm, options=structOptions)
 
-# Set up partition
-firstElem = rank*elemsPerProc
-firstNode = rank*nodesPerProc
-lastElem = (rank+1)*elemsPerProc
-lastNode = (rank+1)*nodesPerProc
-if (rank == size-1):
-    lastElem = nx*ny
-    lastNode = (nx+1)*(ny+1)
+# Set constitutive properties
+rho = 2500.0 # density, kg/m^3
+E = 70e9 # elastic modulus, Pa
+nu = 0.3 # poisson's ratio
+kcorr = 5.0 / 6.0 # shear correction factor
+ys = 350e6 # yield stress, Pa
+min_thickness = 0.002
+max_thickness = 0.20
+thickness = 0.02
 
-# Populate connectivity
-ptr = np.zeros(numElements + 1, dtype=np.int32)
-conn = np.zeros(4*numElements, dtype=np.int32)
-ptr[0] = 0
-k = 0
-for elem in range(firstElem, lastElem):
-    i = elem % nx
-    j = elem // nx
-    conn[4*k] =   i   + j*(nx+1)
-    conn[4*k+1] = i+1 + j*(nx+1)
-    conn[4*k+2] = i   + (j+1)*(nx+1)
-    conn[4*k+3] = i+1 + (j+1)*(nx+1)
-    ptr[k+1] = 4*(k+1)
-    k += 1
+# Loop over components, creating stiffness and element object for each
+num_components = struct_mesh.getNumComponents()
 
-# Set the connectivity
-assembler.setElementConnectivity(ptr, conn)
+for i in range(num_components):
+    descriptor = struct_mesh.getElementDescript(i)
+    print(descriptor)
+    # Setup (isotropic) property and constitutive objects
+    prop = constitutive.MaterialProperties(rho=rho, E=E, nu=nu, ys=ys)
+    # Set one thickness dv for every component
+    stiff = constitutive.IsoShellConstitutive(prop, t=thickness, tMin=min_thickness, tMax=max_thickness, tNum=i)
 
-# Create the isotropic material class
-props = constitutive.MaterialProperties(rho=2700.0, E=70e9, nu=0.3, ys=270.0)
+    element = None
+    transform = None
+    if descriptor in ["CQUAD", "CQUADR", "CQUAD4"]:
+        element = elements.Quad4Shell(transform, stiff)
+    elif descriptor in ["CQUAD9"]:
+        element = elements.Quad9Shell(transform, stiff)
+    struct_mesh.setElement(i, element)
 
-# Create basis, constitutive, element, etc
-linear_basis = elements.LinearQuadBasis()
-stiff = constitutive.PlaneStressConstitutive(props)
-elements_list = []
-plate_elements = []
-for elem in range(firstElem, lastElem):
-    stiff = constitutive.PlaneStressConstitutive(props, 1.0, elem)
-    model = elements.LinearElasticity2D(stiff);
-    elements_list.append(elements.Element2D(model, linear_basis))
-
-    plate_stiff = constitutive.IsoShellConstitutive(props)
-    plate_model = elements.PlateModel(plate_stiff)
-    plate_elements.append(elements.Quad4Shell(None, plate_stiff))
-
-# Set elements into the mesh
-assembler.setElements(plate_elements)
-
-# Set boundary conditions
-for i in range(0, nx + 1):
-    # Here nodal indexing is global
-    nodes = np.array([i], dtype=np.int32)
-    dof = np.array([0, 1, 2], dtype=np.int32)
-    values = np.array([0.0, 0.0, 0.0])
-    assembler.addBCs(nodes, dof, values)
-    
-for i in range(0, nx + 1):
-    # Here nodal indexing is global
-    nodes = np.array([i+ny*(nx+1)], dtype=np.int32)
-    dof = np.array([2], dtype=np.int32)
-    values = np.array([0.0])
-    assembler.addBCs(nodes, dof, values)
+# Create tacs assembler object from mesh loader
+assembler = struct_mesh.createTACS(6)
 
 
+# Get the design variable values
+x = assembler.createDesignVec()
+x_array = x.getArray()
+assembler.getDesignVars(x)
 
-# Done adding elements
-assembler.initialize()
-
-# Create the node location vector
+# Get the node locations
 X = assembler.createNodeVec()
-Xpts = X.getArray()
-
-# Get nodal locations
-k = 0
-coeff = 0.05
-for node in range(firstNode, lastNode):
-    i = node % (nx + 1)
-    j = node // (nx + 1)
-    Xpts[k] = i*Lx/nx
-    Xpts[k+1] = j*Ly/ny
-    Xpts[k+2] = np.sin(Xpts[k+1]/Lx*np.pi)*coeff*Lx
-    k += 3
-
-assembler.reorderVec(X)  # Might not needed since we don't reorder the matrix
+assembler.getNodes(X)
 assembler.setNodes(X)
+
+# # Create the forces
+forces = assembler.createVec()
+force_array = forces.getArray() 
+force_array[2::6] += 100.0 # uniform load in z direction
+assembler.applyBCs(forces)
+
+
+
+# '''
+# Create TACS Assembler OLD METHOD
+# '''
+# comm = MPI.COMM_WORLD
+# rank = comm.rank
+# size = comm.size
+# nx = 20  # number of elements in x direction
+# ny = 20  # number of elements in y direction
+# Lx = 1.0
+# Ly = 1.0
+# varsPerNode = 6
+    
+# nodesPerProc = int((nx+1)*(ny+1)/size)
+# elemsPerProc = int(nx*ny/size)
+# numOwnedNodes = int(nodesPerProc)
+# numElements = int(elemsPerProc)
+# numDependentNodes = 0
+
+# # Adjust for the last processor
+# if (rank == size-1):
+#     numOwnedNodes = (nx+1)*(ny+1) - nodesPerProc*(size-1)
+#     numElements = nx*ny - elemsPerProc*(size-1)
+
+# assembler = TACS.Assembler.create(comm, varsPerNode,
+#                                   numOwnedNodes, numElements,
+#                                   numDependentNodes)
+
+# '''
+# Setup geometry, mesh, material and element
+# '''
+
+# # Set up partition
+# firstElem = rank*elemsPerProc
+# firstNode = rank*nodesPerProc
+# lastElem = (rank+1)*elemsPerProc
+# lastNode = (rank+1)*nodesPerProc
+# if (rank == size-1):
+#     lastElem = nx*ny
+#     lastNode = (nx+1)*(ny+1)
+
+# # Populate connectivity
+# ptr = np.zeros(numElements + 1, dtype=np.int32)
+# conn = np.zeros(4*numElements, dtype=np.int32)
+# ptr[0] = 0
+# k = 0
+# for elem in range(firstElem, lastElem):
+#     i = elem % nx
+#     j = elem // nx
+#     conn[4*k] =   i   + j*(nx+1)
+#     conn[4*k+1] = i+1 + j*(nx+1)
+#     conn[4*k+2] = i   + (j+1)*(nx+1)
+#     conn[4*k+3] = i+1 + (j+1)*(nx+1)
+#     ptr[k+1] = 4*(k+1)
+#     k += 1
+
+# # Set the connectivity
+# assembler.setElementConnectivity(ptr, conn)
+
+# # Create the isotropic material class
+# props = constitutive.MaterialProperties(rho=2700.0, E=70e3, nu=0.3, ys=270.0)
+
+# # Create basis, constitutive, element, etc
+# linear_basis = elements.LinearQuadBasis()
+# stiff = constitutive.PlaneStressConstitutive(props)
+# elements_list = []
+# plate_elements = []
+# for elem in range(firstElem, lastElem):
+#     stiff = constitutive.PlaneStressConstitutive(props, 1.0, elem)
+#     model = elements.LinearElasticity2D(stiff);
+#     elements_list.append(elements.Element2D(model, linear_basis))
+
+#     plate_stiff = constitutive.IsoShellConstitutive(props)
+#     plate_model = elements.PlateModel(plate_stiff)
+#     plate_elements.append(elements.Quad4Shell(None, plate_stiff))
+
+# # Set elements into the mesh
+# assembler.setElements(plate_elements)
+
+# # Set boundary conditions
+# for i in range(0, nx + 1):
+#     # Here nodal indexing is global
+#     nodes = np.array([i], dtype=np.int32)
+#     dof = np.array([0, 1, 2], dtype=np.int32)
+#     values = np.array([0.0, 0.0, 0.0])
+#     assembler.addBCs(nodes, dof, values)
+    
+# for i in range(0, nx + 1):
+#     # Here nodal indexing is global
+#     nodes = np.array([i+ny*(nx+1)], dtype=np.int32)
+#     dof = np.array([2], dtype=np.int32)
+#     values = np.array([0.0])
+#     assembler.addBCs(nodes, dof, values)
+
+
+
+# # Done adding elements
+# assembler.initialize()
+
+# # Create the node location vector
+# X = assembler.createNodeVec()
+# Xpts = X.getArray()
+
+# # Get nodal locations
+# k = 0
+# for node in range(firstNode, lastNode):
+#     i = node % (nx + 1)
+#     j = node // (nx + 1)
+#     Xpts[k] = i*Lx/nx
+#     Xpts[k+1] = j*Ly/ny
+#     k += 3
+
+# assembler.reorderVec(X)  # Might not needed since we don't reorder the matrix
+# assembler.setNodes(X)
 
 # comm = MPI.COMM_WORLD
 
@@ -297,27 +363,25 @@ class Newmark():
         
         # Create the force vector
         forces = assembler.createVec()
+        temp = assembler.createVec()
         
         # Set the compressive force
-        forces_array = forces.getArray()
-        #forces_array[1::6] = -10
-        forces_array[2281::6] = -250000000.0 #Add one more zero for complete collapse of structure
-        assembler.applyBCs(forces)
+        # forces_array = forces.getArray()
+        # forces_array[1::6] = -10
+        # assembler.applyBCs(forces)
 
         for i in range(0, self.N-1):
             #u = np.ones((1,3)) #Some estimate of u[i+1]
             
-            # if i < 3:
+            # if i < 2:
             #         # Initial Perturbation force out of plane
             #     forces_array = forces.getArray()
-            #     #forces_array[1::6] = -10000.0
-            #     forces_array[2281::6] = -2500000.0
-            #     forces_array[1202:1322:6] = 10000.0
+            #     forces_array[1::6] = -10.0
+            #     forces_array[1202:1322:6] = 1000.0
             #     assembler.applyBCs(forces)
             # else:
             #     forces_array = forces.getArray()
-            #     #forces_array[1::6] = -10000.0
-            #     forces_array[2281::6] = -2500000.0
+            #     forces_array[1::6] = -10.0
             #     forces_array[1202:1322:6] = 0.0
             #     assembler.applyBCs(forces)
             
@@ -362,7 +426,10 @@ class Newmark():
                 is_flexible = 1
                 gmres = TACS.KSM(J, pc, gmres_iters, nrestart, is_flexible)
                 
-                res.axpy(-t[i], forces)
+                if i < 5:
+                    res.axpy(-t[i], forces)
+                else:
+                    res.axpy(-0.5, forces)
                 
                 # if rnorm.all() < self.ntol:
                 #     break
@@ -403,7 +470,7 @@ class Newmark():
         
         for i in range(len(self.t)):
             assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
-            f5.writeToFile('panel_test_dyn_initialDef_lessF%d.f5'%(i))
+            f5.writeToFile('stiffened_panel_test%d.f5'%(i))
         return
     
 
@@ -446,7 +513,7 @@ flag = (TACS.OUTPUT_CONNECTIVITY |
         TACS.OUTPUT_NODES |
         TACS.OUTPUT_DISPLACEMENTS |
         TACS.OUTPUT_STRAINS)
-f5 = TACS.ToFH5(assembler, TACS.PLANE_STRESS_ELEMENT, flag)
-
+f5 = TACS.ToFH5(assembler, TACS.BEAM_OR_SHELL_ELEMENT, flag)
+# f5.writeToFile('shell_dyn.f5')
 
 newmark.visualize_disp()
