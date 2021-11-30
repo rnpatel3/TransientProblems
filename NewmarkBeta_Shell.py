@@ -217,32 +217,6 @@ assembler.setNodes(X)
 # mat = assembler.createMat()
 
 
-
-
-# This is the previous "Assembler" interface
-# class Assembler():
-#     def __init__(self, M, C, K):
-#         self.u = np.zeros((3,1))
-#         self.udot = np.zeros((3,1))
-#         self.uddot = np.zeros((3,1))
-#         self.M = M
-#         self.C = C
-#         self.K = K
-
-#     def setVariables(self, u, udot, uddot):
-#         self.u[:] = np.transpose(u)
-#         self.udot[:] = np.transpose(udot)
-#         self.uddot[:] = np.transpose(uddot)
-#         return
-    
-#     def assembleJacobian(self, alpha, beta, gamma, force, res, mat):
-#         res[:] = np.dot(self.K, self.u) + np.dot(self.C, self.udot) + np.dot(self.M, self.uddot) - np.transpose(force)
-#         mat[:] = alpha*self.K + beta*self.C + gamma*self.M
-#         return 
-
-
-
-
 class Newmark():
     def __init__(self, t, x0, xdot0, u, m1, c1, k1, beta = 0.25, gamma = 0.5) :
         self.t = t

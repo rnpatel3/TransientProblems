@@ -11,15 +11,17 @@ import sys
 import os
 np.set_printoptions(threshold=sys.maxsize)
 import matplotlib.pylab as plt
-
 from mpi4py import MPI
 from tacs import TACS, elements, constitutive, functions, pyTACS
 
 # Load structural mesh from BDF file
 tacs_comm = MPI.COMM_WORLD
 
-struct_mesh = TACS.MeshLoader(tacs_comm)
-struct_mesh.scanBDFFile("axial_stiffened_panel.bdf")
+#struct_mesh = TACS.MeshLoader(tacs_comm)
+bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel4.bdf')
+struct_mesh = pyTACS(bdfFile, tacs_comm)
+#struct_mesh.scanBDFFile("axial_stiffened_panel.bdf")
+
 
 # structOptions = {
 #     'printtimings':True,
@@ -31,37 +33,51 @@ struct_mesh.scanBDFFile("axial_stiffened_panel.bdf")
 # bdfFile = os.path.join(os.path.dirname(__file__), 'circ-plate-dirichlet-bcs.bdf')
 # struct_mesh = pyTACS(bdfFile, tacs_comm, options=structOptions)
 
-# Set constitutive properties
-rho = 2500.0 # density, kg/m^3
-E = 70e9 # elastic modulus, Pa
-nu = 0.3 # poisson's ratio
-kcorr = 5.0 / 6.0 # shear correction factor
-ys = 350e6 # yield stress, Pa
-min_thickness = 0.002
-max_thickness = 0.20
-thickness = 0.02
+def elemCallBack(dvNum, compID, compDescript, elemDescripts, specialDVs, **kwargs):
+    # Material properties
+    rho = 2500.0        # density kg/m^3
+    E = 70e9            # Young's modulus (Pa)
+    nu = 0.3            # Poisson's ratio
+    ys = 464.0e6        # yield stress
+
+    # Plate geometry
+    tplate = 0.005    # 1 mm
+    tMin = 0.0001    # 0.1 mm
+    tMax = 0.05     # 5 cm
+
+    # Set up property model
+    prop = constitutive.MaterialProperties(rho=rho, E=E, nu=nu, ys=ys)
+    # Set up constitutive model
+    con = constitutive.IsoShellConstitutive(prop, t=tplate, tNum=dvNum, tlb=tMin, tub=tMax)
+    transform = None
+    # Set up element
+    elem = elements.Quad4Shell(transform, con)
+    scale = [100.0]
+    return elem, scale
+
+assembler = struct_mesh.createTACSAssembler(elemCallBack)
 
 # Loop over components, creating stiffness and element object for each
 num_components = struct_mesh.getNumComponents()
 
-for i in range(num_components):
-    descriptor = struct_mesh.getElementDescript(i)
-    print(descriptor)
-    # Setup (isotropic) property and constitutive objects
-    prop = constitutive.MaterialProperties(rho=rho, E=E, nu=nu, ys=ys)
-    # Set one thickness dv for every component
-    stiff = constitutive.IsoShellConstitutive(prop, t=thickness, tMin=min_thickness, tMax=max_thickness, tNum=i)
+# for i in range(num_components):
+#     descriptor = struct_mesh.getElementDescript(i)
+#     print(descriptor)
+#     # Setup (isotropic) property and constitutive objects
+#     prop = constitutive.MaterialProperties(rho=rho, E=E, nu=nu, ys=ys)
+#     # Set one thickness dv for every component
+#     stiff = constitutive.IsoShellConstitutive(prop, t=thickness, tMin=min_thickness, tMax=max_thickness, tNum=i)
 
-    element = None
-    transform = None
-    if descriptor in ["CQUAD", "CQUADR", "CQUAD4"]:
-        element = elements.Quad4Shell(transform, stiff)
-    elif descriptor in ["CQUAD9"]:
-        element = elements.Quad9Shell(transform, stiff)
-    struct_mesh.setElement(i, element)
+#     element = None
+#     transform = None
+#     if descriptor in ["CQUAD", "CQUADR", "CQUAD4"]:
+#         element = elements.Quad4Shell(transform, stiff)
+#     elif descriptor in ["CQUAD9"]:
+#         element = elements.Quad9Shell(transform, stiff)
+#     struct_mesh.setElement(i, element)
 
-# Create tacs assembler object from mesh loader
-assembler = struct_mesh.createTACS(6)
+# # Create tacs assembler object from mesh loader
+# assembler = struct_mesh.createTACS(6)
 
 
 # Get the design variable values
@@ -79,7 +95,6 @@ forces = assembler.createVec()
 force_array = forces.getArray() 
 force_array[2::6] += 100.0 # uniform load in z direction
 assembler.applyBCs(forces)
-
 
 
 class Newmark():
@@ -241,7 +256,7 @@ class Newmark():
         
         for i in range(len(self.t)):
             assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
-            f5.writeToFile('stiffened_panel_test%d.f5'%(i))
+            f5.writeToFile('stiffened_panel_pytacs%d.f5'%(i))
         return
     
 
