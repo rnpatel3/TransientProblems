@@ -77,7 +77,7 @@ assembler.setNodes(X)
 # # Create the forces
 forces = assembler.createVec()
 force_array = forces.getArray() 
-force_array[2::6] += 100.0 # uniform load in z direction
+force_array[1::6] += 150.0 # uniform load in y direction (Does;nt work properly)
 assembler.applyBCs(forces)
 
 
@@ -202,8 +202,6 @@ class Newmark():
                 else:
                     res.axpy(-0.5, forces)
                 
-                # if rnorm.all() < self.ntol:
-                #     break
             
                 if res.norm() < self.ntol:
                     break
@@ -217,11 +215,7 @@ class Newmark():
                 udot.axpy(-tacs_beta, update)
                 uddot.axpy(-tacs_gamma, update)
                 assembler.setVariables(u,udot,uddot)
-
-                # u -= np.transpose(update)
-                # udot -= tacs_beta*np.transpose(update)
-                # uddot -= tacs_gamma*np.transpose(update)
-
+                
             #Store update to u, udot, uddot
 
             self.x[i+1] = u
@@ -241,7 +235,7 @@ class Newmark():
         
         for i in range(len(self.t)):
             assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
-            f5.writeToFile('stiffened_panel_test%d.f5'%(i))
+            f5.writeToFile('stiffened_panel_2test%d.f5'%(i))
         return
     
 
@@ -264,8 +258,6 @@ for j in range(0,len(t)):
     if t[j] > np.pi/omega:
         pulse[j] = 0
 
-# u[2,:] = 50*pulse #Need to find a way to add loads
-
 #Create Stiffness, Mass, and Damping Matrices
 m1 = assembler.createMat()
 assembler.assembleMatType(TACS.MASS_MATRIX, m1)
@@ -273,10 +265,6 @@ k1 = assembler.createMat()
 assembler.assembleMatType(TACS.STIFFNESS_MATRIX, k1)
 c1 = assembler.createMat()
 c1.scale(3e-2)
-
-# m1 = np.array([[10, 0, 0],[0, 20, 0],[0, 0, 30]])
-# k1 = 1e3* np.array([[45, -20, -15],[-20, 45, -25],[-15, -25, 40]])
-# c1 = 3e-2*k1
 
 newmark = Newmark(t, x0, xdot0, u, m1, c1, k1)
 newmark.forward_integration()

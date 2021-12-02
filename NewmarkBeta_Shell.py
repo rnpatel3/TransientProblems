@@ -81,10 +81,6 @@ stiff = constitutive.PlaneStressConstitutive(props)
 elements_list = []
 plate_elements = []
 for elem in range(firstElem, lastElem):
-    stiff = constitutive.PlaneStressConstitutive(props, 1.0, elem)
-    model = elements.LinearElasticity2D(stiff);
-    elements_list.append(elements.Element2D(model, linear_basis))
-
     plate_stiff = constitutive.IsoShellConstitutive(props)
     plate_model = elements.PlateModel(plate_stiff)
     plate_elements.append(elements.Quad4Shell(None, plate_stiff))
@@ -94,14 +90,14 @@ assembler.setElements(plate_elements)
 
 # Set boundary conditions
 for i in range(0, nx + 1):
-    # Here nodal indexing is global
+    # Here nodal indexing is global - Fixed edge
     nodes = np.array([i], dtype=np.int32)
     dof = np.array([0, 1, 2], dtype=np.int32)
     values = np.array([0.0, 0.0, 0.0])
     assembler.addBCs(nodes, dof, values)
     
 for i in range(0, nx + 1):
-    # Here nodal indexing is global
+    # Here nodal indexing is global - Simply supported edge
     nodes = np.array([i+ny*(nx+1)], dtype=np.int32)
     dof = np.array([2], dtype=np.int32)
     values = np.array([0.0])
@@ -314,7 +310,6 @@ class Newmark():
             u.axpy((dt*(1-self.gamma/(2*self.beta))), self.xddot[i])
                    
             u = assembler.createVec() #Reset u for the last time
-            #force = np.reshape(self.u[:,i+1], (1,3)) #Need to handle forces somehow into the "residual" again
 
             for j in range(self.newton_iters):
                 update = assembler.createVec()
@@ -336,14 +331,10 @@ class Newmark():
                     res.axpy(-t[i], forces)
                 else:
                     res.axpy(-0.5, forces)
-                
-                # if rnorm.all() < self.ntol:
-                #     break
-            
+                            
                 if res.norm() < self.ntol:
                     break
 
-                
                 #gmres.setMonitor(comm, freq=1)
                 gmres.solve(res, update)
                 
@@ -352,13 +343,8 @@ class Newmark():
                 udot.axpy(-tacs_beta, update)
                 uddot.axpy(-tacs_gamma, update)
                 assembler.setVariables(u,udot,uddot)
-
-                # u -= np.transpose(update)
-                # udot -= tacs_beta*np.transpose(update)
-                # uddot -= tacs_gamma*np.transpose(update)
-
+                
             #Store update to u, udot, uddot
-
             self.x[i+1] = u
             self.xdot[i+1] = udot
             self.xddot[i+1] = uddot
@@ -376,7 +362,7 @@ class Newmark():
         
         for i in range(len(self.t)):
             assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
-            f5.writeToFile('panel_test_staticload%d.f5'%(i))
+            f5.writeToFile('panel_test_2staticload%d.f5'%(i))
         return
     
 
@@ -408,10 +394,6 @@ k1 = assembler.createMat()
 assembler.assembleMatType(TACS.STIFFNESS_MATRIX, k1)
 c1 = assembler.createMat()
 c1.scale(3e-2)
-
-# m1 = np.array([[10, 0, 0],[0, 20, 0],[0, 0, 30]])
-# k1 = 1e3* np.array([[45, -20, -15],[-20, 45, -25],[-15, -25, 40]])
-# c1 = 3e-2*k1
 
 newmark = Newmark(t, x0, xdot0, u, m1, c1, k1)
 newmark.forward_integration()

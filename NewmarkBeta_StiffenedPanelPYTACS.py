@@ -18,7 +18,7 @@ from tacs import TACS, elements, constitutive, functions, pyTACS
 tacs_comm = MPI.COMM_WORLD
 
 #struct_mesh = TACS.MeshLoader(tacs_comm)
-bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel4.bdf')
+bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel4.dat')
 struct_mesh = pyTACS(bdfFile, tacs_comm)
 #struct_mesh.scanBDFFile("axial_stiffened_panel.bdf")
 
@@ -60,6 +60,9 @@ assembler = struct_mesh.createTACSAssembler(elemCallBack)
 # Loop over components, creating stiffness and element object for each
 num_components = struct_mesh.getNumComponents()
 
+'''
+Previous method of importing geometry and setting up stiffness/elements
+'''
 # for i in range(num_components):
 #     descriptor = struct_mesh.getElementDescript(i)
 #     print(descriptor)
@@ -217,9 +220,6 @@ class Newmark():
                 else:
                     res.axpy(-0.5, forces)
                 
-                # if rnorm.all() < self.ntol:
-                #     break
-            
                 if res.norm() < self.ntol:
                     break
 
@@ -232,10 +232,6 @@ class Newmark():
                 udot.axpy(-tacs_beta, update)
                 uddot.axpy(-tacs_gamma, update)
                 assembler.setVariables(u,udot,uddot)
-
-                # u -= np.transpose(update)
-                # udot -= tacs_beta*np.transpose(update)
-                # uddot -= tacs_gamma*np.transpose(update)
 
             #Store update to u, udot, uddot
 

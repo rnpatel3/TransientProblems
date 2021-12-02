@@ -338,13 +338,9 @@ class Newmark():
                 
                 res.axpy(-t[i], forces)
                 
-                # if rnorm.all() < self.ntol:
-                #     break
-            
                 if res.norm() < self.ntol:
                     break
 
-                
                 #gmres.setMonitor(comm, freq=1)
                 gmres.solve(res, update)
                 
@@ -353,10 +349,6 @@ class Newmark():
                 udot.axpy(-tacs_beta, update)
                 uddot.axpy(-tacs_gamma, update)
                 assembler.setVariables(u,udot,uddot)
-
-                # u -= np.transpose(update)
-                # udot -= tacs_beta*np.transpose(update)
-                # uddot -= tacs_gamma*np.transpose(update)
 
             #Store update to u, udot, uddot
 
