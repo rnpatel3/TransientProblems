@@ -19,7 +19,8 @@ from tacs import TACS, elements, constitutive, functions, pyTACS
 tacs_comm = MPI.COMM_WORLD
 
 struct_mesh = TACS.MeshLoader(tacs_comm)
-struct_mesh.scanBDFFile("axial_stiffened_panel.bdf")
+struct_mesh.scanBDFFile("axial_stiffened_panel_2.bdf")
+
 
 # structOptions = {
 #     'printtimings':True,
