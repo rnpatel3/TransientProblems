@@ -100,7 +100,7 @@ force_array[2::6] += 100.0 # uniform load in z direction
 assembler.applyBCs(forces)
 
 
-class Newmark():
+class Newmark(pyTACS.TransientProblem):
     def __init__(self, t, x0, xdot0, u, m1, c1, k1, beta = 0.25, gamma = 0.5) :
         self.t = t
         self.M = m1
@@ -289,7 +289,7 @@ c1.scale(3e-2)
 # c1 = 3e-2*k1
 
 newmark = Newmark(t, x0, xdot0, u, m1, c1, k1)
-newmark.forward_integration()
+newmark.solve()
 flag = (TACS.OUTPUT_CONNECTIVITY |
         TACS.OUTPUT_NODES |
         TACS.OUTPUT_DISPLACEMENTS |
