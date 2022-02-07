@@ -46,7 +46,7 @@ structOptions = {
     #'outputElement': TACS.PLANE_STRESS_ELEMENT,
 }
 
-bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel4.dat')
+bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel4_coarse_mod.dat')
 FEAAssembler = pyTACS(bdfFile, comm, options=structOptions)
 
 def elemCallBack(dvNum, compID, compDescript, elemDescripts, globalDVs, **kwargs):
@@ -90,7 +90,7 @@ FEAAssembler.initialize(elemCallBack)
 transientOptions = {'printlevel':1}
 # Setup problems
 # Create a transient problem that will represent time varying convection
-transientProb = FEAAssembler.createTransientProblem('TransientTherm2', tInit=0.0, tFinal=2.0, numSteps=20, options=transientOptions)
+transientProb = FEAAssembler.createTransientProblem('TransientThermCoarse', tInit=0.0, tFinal=2.0, numSteps=21, options=transientOptions)
 # Create a static problem that will represent the steady state solution
 #staticProb = FEAAssembler.createStaticProblem(name='SteadyState')
 # Add both problems to a list
@@ -121,9 +121,9 @@ for step_i, time in enumerate(timeSteps):
     #Adding constant load through all elements of plate
     Q = 100 * np.sin(2 * np.pi * fhz * time)
     if step_i < 5:
-        F = np.array([0.0, 0.0, 10, 0.0, 0.0, 0.0, 2.5e-14])
+        F = np.array([0.0, 0.0, 10, 0.0, 0.0, 0.0, 2.5e-25])
     elif step_i < 10:
-        F = np.array([0.0, 0.0, 10, 0.0, 0.0, 0.0, -2.5e-14])
+        F = np.array([0.0, 0.0, 10, 0.0, 0.0, 0.0, -2.5e-25])
     else:
         F = np.array([0.0, 0.0, 10, 0.0, 0.0, 0.0, 0])
     transientProb.addLoadToNodes(step_i, nIDs, F, nastranOrdering=True)
@@ -138,13 +138,44 @@ for problem in allProblems:
     problem.evalFunctions(funcs)
     problem.evalFunctionsSens(funcsSens)
     problem.writeSolution()
-    t,q,qdot,qddot = problem.getVariables()
+
+#Don't care about functions, sens for now
+#if comm.rank == 0:
+#    pprint(funcs)
+#    pprint(funcsSens) Don't need sensitivities for now
 
 if comm.rank == 0:
-    pprint(funcs)
+    #Create X and Y Vectors
+    x = np.zeros((994, 20))
+    y = np.zeros((994, 20))
 
-if comm.rank == 0:
-    pprint(funcsSens)
-    pprint(q.dtype())
-    pprint(q)
+    #Start placing values into x and y vecs
+    for j in range(20):
+        if j > 0:
+            y[:,j] = q
+        t, q, qdot, qddot = problem.getVariables(j) #Returns numpy array
+        x[:,j] = q
+
+    #Start performing SVD
+    u,s,v = np.linalg.svd(x)
+    u = u[:,:20] #Trim U to account for nonsquare matrices SVD
+    sigma = np.diag(s)
+    pprint(s)
+    #Compute pseudoinverse of SIGMA
+    sigma_inv = np.zeros((20,20))
+    for k in range(20):
+        if s[k] > 0:
+            sigma_inv[k,k] = s[k]
+    #sigma_inv = np.linalg.inv(sigma)
+
+    #A_approx = np.dot(np.transpose(u), np.dot(y, np.dot(np.transpose(v), sigma_inv)))
+    A_approx = np.transpose(u)@y@v@sigma_inv
+    # pprint(u.shape)
+    # pprint(y.shape)
+    # pprint(v.shape)
+    # pprint(sigma_inv.shape)
+    lam, w = np.linalg.eigh(A_approx)
+    phi = np.dot(u,w)
+    pprint(lam)
+    exit(0)
     
