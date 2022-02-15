@@ -31,10 +31,6 @@ from mpi4py import MPI
 # Extension modules
 # ==============================================================================
 from tacs import functions, constitutive, elements, TACS, pyTACS, problems
-# Radius of plate
-R = 1.0
-# Area of plate
-area = np.pi * R ** 2
 
 comm = MPI.COMM_WORLD
 
@@ -46,7 +42,7 @@ structOptions = {
     #'outputElement': TACS.PLANE_STRESS_ELEMENT,
 }
 
-bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel4_coarse_mod.dat')
+bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel7.dat')
 FEAAssembler = pyTACS(bdfFile, comm, options=structOptions)
 
 def elemCallBack(dvNum, compID, compDescript, elemDescripts, globalDVs, **kwargs):
@@ -54,6 +50,10 @@ def elemCallBack(dvNum, compID, compDescript, elemDescripts, globalDVs, **kwargs
     rho = 2500.0        # density kg/m^3
     kappa = 230.0       # Thermal conductivity W/(m⋅K)
     specificHeat = 921.0 # Specific heat J/(kg⋅K)
+    alpha = 8.6e-6       #CTE Titanium 6Al-4V
+    E = 70e9            # Young's modulus (Pa)
+    nu = 0.3            # Poisson's ratio
+    ys = 464.0e6        # yield stress
 
     # Plate geometry
     tplate = 0.005    # 1 mm
@@ -61,7 +61,7 @@ def elemCallBack(dvNum, compID, compDescript, elemDescripts, globalDVs, **kwargs
     tMax = 0.05     # 5 cm
 
     # Setup property and constitutive objects
-    prop = constitutive.MaterialProperties(rho=rho, kappa=kappa, specific_heat=specificHeat)
+    prop = constitutive.MaterialProperties(rho=rho, kappa=kappa, specific_heat=specificHeat, E=E, nu=nu, ys=ys)
     # Set one thickness dv for every component
     con = constitutive.IsoShellConstitutive(prop, t=tplate, tNum=dvNum, tlb=tMin, tub=tMax)
     transform = None
@@ -90,7 +90,7 @@ FEAAssembler.initialize(elemCallBack)
 transientOptions = {'printlevel':1}
 # Setup problems
 # Create a transient problem that will represent time varying convection
-transientProb = FEAAssembler.createTransientProblem('TransientThermCoarse', tInit=0.0, tFinal=2.0, numSteps=21, options=transientOptions)
+transientProb = FEAAssembler.createTransientProblem('TACSFixTrans', tInit=0.0, tFinal=2.0, numSteps=21, options=transientOptions)
 # Create a static problem that will represent the steady state solution
 #staticProb = FEAAssembler.createStaticProblem(name='SteadyState')
 # Add both problems to a list
@@ -102,13 +102,11 @@ allProblems = []
 transientProb.addFunction('mass', functions.StructuralMass)
 transientProb.addFunction('ks_temp', functions.KSTemperature,
                         ksWeight=100.0)
-transientProb.addFunction('avg_temp', functions.AverageTemperature, volume=area)
 
 
 bdfInfo = FEAAssembler.getBDFInfo()
 # cross-reference bdf object to use some of pynastrans advanced features
 bdfInfo.cross_reference()
-# Loop through each element and get the spatial variation of the pressure
 Pxy = []
 eIDs = []
 nIDs = []
@@ -120,12 +118,14 @@ for step_i, time in enumerate(timeSteps):
     # # Multiply by time factor
     #Adding constant load through all elements of plate
     Q = 100 * np.sin(2 * np.pi * fhz * time)
-    if step_i < 5:
-        F = np.array([0.0, 0.0, 10, 0.0, 0.0, 0.0, 2.5e-25])
-    elif step_i < 10:
-        F = np.array([0.0, 0.0, 10, 0.0, 0.0, 0.0, -2.5e-25])
-    else:
-        F = np.array([0.0, 0.0, 10, 0.0, 0.0, 0.0, 0])
+    #F = np.array([0.0, 0.0, 1000*time, 0.0, 0.0, 0.0, 0])
+    F = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1e-3])
+    #if step_i < 2:
+    #    F = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.5e-13])
+    #elif step_i < 20:
+    #    F = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -2.5e-13])
+    #else:
+    #    F = np.array([0.0, 0.0, 0, 0.0, 0.0, 0.0, 0])
     transientProb.addLoadToNodes(step_i, nIDs, F, nastranOrdering=True)
 
 allProblems.append(transientProb)
@@ -144,7 +144,7 @@ for problem in allProblems:
 #    pprint(funcs)
 #    pprint(funcsSens) Don't need sensitivities for now
 
-if comm.rank == 0:
+""" if comm.rank == 0:
     #Create X and Y Vectors
     x = np.zeros((994, 20))
     y = np.zeros((994, 20))
@@ -178,4 +178,4 @@ if comm.rank == 0:
     phi = np.dot(u,w)
     pprint(lam)
     exit(0)
-    
+     """

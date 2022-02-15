@@ -16,10 +16,15 @@ from tacs import TACS, elements, constitutive, functions, pyTACS
 
 # Load structural mesh from BDF file
 tacs_comm = MPI.COMM_WORLD
-
+structOptions = {
+    'printtimings':True,
+    # Specify what type of elements we want in the f5
+    #'writeSolution':True,
+    #'outputElement': TACS.PLANE_STRESS_ELEMENT,
+}
 #struct_mesh = TACS.MeshLoader(tacs_comm)
-bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel4.dat')
-struct_mesh = pyTACS(bdfFile, tacs_comm)
+bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel7.dat')
+FEASolver = pyTACS(bdfFile, tacs_comm, options=structOptions)
 #struct_mesh.scanBDFFile("axial_stiffened_panel.bdf")
 
 
@@ -39,6 +44,8 @@ def elemCallBack(dvNum, compID, compDescript, elemDescripts, specialDVs, **kwarg
     E = 70e9            # Young's modulus (Pa)
     nu = 0.3            # Poisson's ratio
     ys = 464.0e6        # yield stress
+    specificHeat = 1000.0
+    kappa = 230.0       # Thermal conductivity W/(m⋅K)
 
     # Plate geometry
     tplate = 0.005    # 1 mm
@@ -46,19 +53,40 @@ def elemCallBack(dvNum, compID, compDescript, elemDescripts, specialDVs, **kwarg
     tMax = 0.05     # 5 cm
 
     # Set up property model
-    prop = constitutive.MaterialProperties(rho=rho, E=E, nu=nu, ys=ys)
+    prop = constitutive.MaterialProperties(kappa=kappa, specific_heat=specificHeat, rho=rho, E=E, nu=nu, ys=ys)
     # Set up constitutive model
     con = constitutive.IsoShellConstitutive(prop, t=tplate, tNum=dvNum, tlb=tMin, tub=tMax)
     transform = None
+    
     # Set up element
-    elem = elements.Quad4Shell(transform, con)
-    scale = [100.0]
-    return elem, scale
+    
+    #elem = elements.Quad4Shell(transform, con)
+    #scale = [100.0]
+    
+    # For each element type in this component,
+    # pass back the appropriate tacs element object
+    elemList = []
+    #model = elements.HeatConduction3D(con)
+    for elemDescript in elemDescripts:
+        if elemDescript in ['CQUAD4', 'CQUADR']:
+            #basis = elements.LinearQuadBasis()
+            elem = elements.Quad4ThermalShell(transform, con)
+        elif elemDescript in ['CTRIA3', 'CTRIAR']:
+            basis = elements.LinearTriangleBasis()
+        else:
+            print("Uh oh, '%s' not recognized" % (elemDescript))
+        #elem = elements.Quad4ThermalShell(model, basis)
+        elemList.append(elem)
 
-assembler = struct_mesh.createTACSAssembler(elemCallBack)
+    # Add scale for thickness dv
+    scale = [100.0]
+    return elemList, scale
+
+FEASolver.initialize(elemCallBack)
+assembler = FEASolver.assembler
 
 # Loop over components, creating stiffness and element object for each
-num_components = struct_mesh.getNumComponents()
+num_components = FEASolver.getNumComponents()
 
 '''
 Previous method of importing geometry and setting up stiffness/elements
@@ -94,13 +122,13 @@ assembler.getNodes(X)
 assembler.setNodes(X)
 
 # # Create the forces
-forces = assembler.createVec()
-force_array = forces.getArray() 
-force_array[2::6] += 100.0 # uniform load in z direction
-assembler.applyBCs(forces)
+#forces = assembler.createVec()
+#force_array = forces.getArray() 
+#force_array[2::7] += 10000.0 # uniform load in z direction
+#assembler.applyBCs(forces)
 
 
-class Newmark(pyTACS.TransientProblem):
+class Newmark():
     def __init__(self, t, x0, xdot0, u, m1, c1, k1, beta = 0.25, gamma = 0.5) :
         self.t = t
         self.M = m1
@@ -131,7 +159,7 @@ class Newmark(pyTACS.TransientProblem):
         return
     
 
-    def forward_integration(self):
+    def solve(self):
         # dt =  self.t[1] - self.t[0]
         dt = 0.1 #Fixed val for now
         # res = np.zeros((3,1))
@@ -161,17 +189,19 @@ class Newmark(pyTACS.TransientProblem):
         for i in range(0, self.N-1):
             #u = np.ones((1,3)) #Some estimate of u[i+1]
             
-            # if i < 2:
-            #         # Initial Perturbation force out of plane
-            #     forces_array = forces.getArray()
-            #     forces_array[1::6] = -10.0
-            #     forces_array[1202:1322:6] = 1000.0
-            #     assembler.applyBCs(forces)
-            # else:
-            #     forces_array = forces.getArray()
-            #     forces_array[1::6] = -10.0
-            #     forces_array[1202:1322:6] = 0.0
-            #     assembler.applyBCs(forces)
+            if i < 2:
+                    # Initial Perturbation force out of plane
+                forces_array = forces.getArray()
+                #forces_array[2::7] = -20000.0
+                forces_array[6::7] = 1e-3
+                #forces_array[1202:1322:7] = 100.0
+                assembler.applyBCs(forces)
+            else:
+                forces_array = forces.getArray()
+                #forces_array[2::7] = -20000.0
+                forces_array[6::7] = 1e-3
+                #forces_array[1202:1322:7] = 0.0
+                assembler.applyBCs(forces)
             
             # force_arr = forces.getArray()
             # print(force_arr)
@@ -214,10 +244,12 @@ class Newmark(pyTACS.TransientProblem):
                 is_flexible = 1
                 gmres = TACS.KSM(J, pc, gmres_iters, nrestart, is_flexible)
                 
-                if i < 5:
-                    res.axpy(-t[i], forces)
-                else:
-                    res.axpy(-0.5, forces)
+                res.axpy(-1.0, forces)
+
+                #if i < 5:
+                #    res.axpy(-t[i], forces)
+                #else:
+                #    res.axpy(-0.5, forces)
                 
                 if res.norm() < self.ntol:
                     break
@@ -255,7 +287,7 @@ class Newmark(pyTACS.TransientProblem):
         return
     
 
-t = np.linspace(0,1.0,11)
+t = np.linspace(0,1.0,10)
 #x0 = np.array([0, 0, 0])
 #xdot0 = np.array([0, 0, 0])
 x0 =  assembler.createVec()
