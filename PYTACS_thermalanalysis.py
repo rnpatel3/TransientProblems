@@ -42,7 +42,7 @@ structOptions = {
     #'outputElement': TACS.PLANE_STRESS_ELEMENT,
 }
 
-bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel7.dat')
+bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel4_coarse.dat')
 FEAAssembler = pyTACS(bdfFile, comm, options=structOptions)
 
 def elemCallBack(dvNum, compID, compDescript, elemDescripts, globalDVs, **kwargs):
@@ -90,13 +90,12 @@ FEAAssembler.initialize(elemCallBack)
 transientOptions = {'printlevel':1}
 # Setup problems
 # Create a transient problem that will represent time varying convection
-transientProb = FEAAssembler.createTransientProblem('TACSFixTrans', tInit=0.0, tFinal=2.0, numSteps=21, options=transientOptions)
+num_steps = 21
+transientProb = FEAAssembler.createTransientProblem('MechIncrLoad', tInit=0.0, tFinal=2.0, numSteps=num_steps, options=transientOptions)
 # Create a static problem that will represent the steady state solution
 #staticProb = FEAAssembler.createStaticProblem(name='SteadyState')
 # Add both problems to a list
 allProblems = []
-
-
 
 # Add functions to each problem
 transientProb.addFunction('mass', functions.StructuralMass)
@@ -113,20 +112,36 @@ nIDs = []
 fhz = 1.0
 for nID in bdfInfo.nodes:
     nIDs.append(nID)
+
+nID_edge = [9,10,11,12,13,54,55,56,57,58,211,212,213,214,
+            238,239,240,241,526,527,528,529,553,554,555,
+            556,726,727,728,729,922,923,924,1094,1095,1096,1097]
+
+
+#Trying to add a slight initial geom imperfection
+
+X = transientProb.getNodes()
+Xpts = X
+Lz = 3.0
+Xpts[1::3] += 0.05*np.sin(np.pi*Xpts[2::3]/Lz)
+transientProb.setNodes(X)
+
+#Adding dynamic loading
 timeSteps = transientProb.getTimeSteps()
 for step_i, time in enumerate(timeSteps):
     # # Multiply by time factor
     #Adding constant load through all elements of plate
-    Q = 100 * np.sin(2 * np.pi * fhz * time)
+    #Q = 100 * np.sin(2 * np.pi * fhz * time)
     #F = np.array([0.0, 0.0, 1000*time, 0.0, 0.0, 0.0, 0])
-    F = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1e-3])
+    F = np.array([0.0, 0.0, -step_i*500.0, 0.0, 0.0, 0.0, 0.0])
     #if step_i < 2:
     #    F = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.5e-13])
     #elif step_i < 20:
     #    F = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -2.5e-13])
     #else:
     #    F = np.array([0.0, 0.0, 0, 0.0, 0.0, 0.0, 0])
-    transientProb.addLoadToNodes(step_i, nIDs, F, nastranOrdering=True)
+    #transientProb.addLoadToNodes(step_i, nIDs, F, nastranOrdering=True)
+    transientProb.addLoadToNodes(step_i, nID_edge, F, nastranOrdering=True)
 
 allProblems.append(transientProb)
 
@@ -138,16 +153,20 @@ for problem in allProblems:
     problem.evalFunctions(funcs)
     problem.evalFunctionsSens(funcsSens)
     problem.writeSolution()
+    
 
 #Don't care about functions, sens for now
 #if comm.rank == 0:
 #    pprint(funcs)
 #    pprint(funcsSens) Don't need sensitivities for now
 
-""" if comm.rank == 0:
+if comm.rank == 0:
     #Create X and Y Vectors
-    x = np.zeros((994, 20))
-    y = np.zeros((994, 20))
+    statearr = []
+    t, q, qdot, qddot = problem.getVariables(0) #Figure out how many nodes we have
+
+    x = np.zeros((len(q), num_steps-1))
+    y = np.zeros((len(q), num_steps-1))
 
     #Start placing values into x and y vecs
     for j in range(20):
@@ -158,12 +177,12 @@ for problem in allProblems:
 
     #Start performing SVD
     u,s,v = np.linalg.svd(x)
-    u = u[:,:20] #Trim U to account for nonsquare matrices SVD
+    u = u[:,:num_steps-1] #Trim U to account for nonsquare matrices SVD
     sigma = np.diag(s)
     pprint(s)
     #Compute pseudoinverse of SIGMA
-    sigma_inv = np.zeros((20,20))
-    for k in range(20):
+    sigma_inv = np.zeros((num_steps-1, num_steps-1))
+    for k in range(num_steps-1):
         if s[k] > 0:
             sigma_inv[k,k] = s[k]
     #sigma_inv = np.linalg.inv(sigma)
@@ -178,4 +197,3 @@ for problem in allProblems:
     phi = np.dot(u,w)
     pprint(lam)
     exit(0)
-     """

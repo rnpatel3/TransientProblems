@@ -22,21 +22,10 @@ structOptions = {
     #'writeSolution':True,
     #'outputElement': TACS.PLANE_STRESS_ELEMENT,
 }
-#struct_mesh = TACS.MeshLoader(tacs_comm)
-bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel7.dat')
+
+bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel4_coarse.dat')
 FEASolver = pyTACS(bdfFile, tacs_comm, options=structOptions)
-#struct_mesh.scanBDFFile("axial_stiffened_panel.bdf")
 
-
-# structOptions = {
-#     'printtimings':True,
-#     # Specify what type of elements we want in the f5
-#     'writeSolution':True,
-#     'outputElement': TACS.PLANE_STRESS_ELEMENT,
-# }
-
-# bdfFile = os.path.join(os.path.dirname(__file__), 'circ-plate-dirichlet-bcs.bdf')
-# struct_mesh = pyTACS(bdfFile, tacs_comm, options=structOptions)
 
 def elemCallBack(dvNum, compID, compDescript, elemDescripts, specialDVs, **kwargs):
     # Material properties
@@ -88,44 +77,25 @@ assembler = FEASolver.assembler
 # Loop over components, creating stiffness and element object for each
 num_components = FEASolver.getNumComponents()
 
-'''
-Previous method of importing geometry and setting up stiffness/elements
-'''
-# for i in range(num_components):
-#     descriptor = struct_mesh.getElementDescript(i)
-#     print(descriptor)
-#     # Setup (isotropic) property and constitutive objects
-#     prop = constitutive.MaterialProperties(rho=rho, E=E, nu=nu, ys=ys)
-#     # Set one thickness dv for every component
-#     stiff = constitutive.IsoShellConstitutive(prop, t=thickness, tMin=min_thickness, tMax=max_thickness, tNum=i)
-
-#     element = None
-#     transform = None
-#     if descriptor in ["CQUAD", "CQUADR", "CQUAD4"]:
-#         element = elements.Quad4Shell(transform, stiff)
-#     elif descriptor in ["CQUAD9"]:
-#         element = elements.Quad9Shell(transform, stiff)
-#     struct_mesh.setElement(i, element)
-
-# # Create tacs assembler object from mesh loader
-# assembler = struct_mesh.createTACS(6)
-
-
 # Get the design variable values
 x = assembler.createDesignVec()
 x_array = x.getArray()
 assembler.getDesignVars(x)
 
-# Get the node locations
+# Get the node locations to add initial imperfection
 X = assembler.createNodeVec()
 assembler.getNodes(X)
+Xpts = X.getArray()
+Lz = 3.0
+Xpts[1::3] += 0.05*np.sin(np.pi*Xpts[2::3]/Lz)
+
 assembler.setNodes(X)
 
 # # Create the forces
-#forces = assembler.createVec()
-#force_array = forces.getArray() 
-#force_array[2::7] += 10000.0 # uniform load in z direction
-#assembler.applyBCs(forces)
+forces = assembler.createVec()
+force_array = forces.getArray() 
+force_array[2::7] -= 100.0 # uniform load in z direction
+assembler.applyBCs(forces)
 
 
 class Newmark():
@@ -182,24 +152,24 @@ class Newmark():
         temp = assembler.createVec()
         
         # Set the compressive force
-        # forces_array = forces.getArray()
-        # forces_array[1::6] = -10
-        # assembler.applyBCs(forces)
+        #forces_array = forces.getArray()
+        #forces_array[2::7] = 10.0
+        #assembler.applyBCs(forces)
 
         for i in range(0, self.N-1):
             #u = np.ones((1,3)) #Some estimate of u[i+1]
             
             if i < 2:
-                    # Initial Perturbation force out of plane
+                # Initial Perturbation force out of plane
                 forces_array = forces.getArray()
-                #forces_array[2::7] = -20000.0
-                forces_array[6::7] = 1e-3
+                forces_array[2::7] = -20.0
+                #forces_array[6::7] = 1e-3
                 #forces_array[1202:1322:7] = 100.0
                 assembler.applyBCs(forces)
             else:
                 forces_array = forces.getArray()
-                #forces_array[2::7] = -20000.0
-                forces_array[6::7] = 1e-3
+                forces_array[2::7] = -20.0
+                #forces_array[6::7] = 1e-3
                 #forces_array[1202:1322:7] = 0.0
                 assembler.applyBCs(forces)
             
@@ -239,13 +209,13 @@ class Newmark():
                 assembler.assembleJacobian(tacs_alpha, tacs_beta, tacs_gamma, res, J)
                 pc = TACS.Pc(J)
                 pc.factor()
-                gmres_iters = 5
+                gmres_iters = 25
                 nrestart = 2
                 is_flexible = 1
                 gmres = TACS.KSM(J, pc, gmres_iters, nrestart, is_flexible)
                 
-                res.axpy(-1.0, forces)
-
+                res.axpy(-i, forces)
+                
                 #if i < 5:
                 #    res.axpy(-t[i], forces)
                 #else:
@@ -283,7 +253,7 @@ class Newmark():
         
         for i in range(len(self.t)):
             assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
-            f5.writeToFile('stiffened_panel_pytacs%d.f5'%(i))
+            f5.writeToFile('geom_impf_NB_pytacs%d.f5'%(i))
         return
     
 
@@ -316,9 +286,16 @@ assembler.assembleMatType(TACS.STIFFNESS_MATRIX, k1)
 c1 = assembler.createMat()
 c1.scale(3e-2)
 
-# m1 = np.array([[10, 0, 0],[0, 20, 0],[0, 0, 30]])
-# k1 = 1e3* np.array([[45, -20, -15],[-20, 45, -25],[-15, -25, 40]])
-# c1 = 3e-2*k1
+G = assembler.createMat()
+assembler.assembleMatType(TACS.GEOMETRIC_STIFFNESS_MATRIX, G)
+#mat = assembler.createMat()
+k2 = assembler.createSchurMat()
+assembler.assembleMatType(TACS.STIFFNESS_MATRIX, k2)
+pc = TACS.Pc(k2)
+subspace = 100
+buckling = TACS.BucklingAnalysis(assembler, 1.3, G, k1, TACS.KSM(k2, pc, subspace, nrestart=3)) #Put something in the KSM solver
+buckling.solve()
+exit(1)
 
 newmark = Newmark(t, x0, xdot0, u, m1, c1, k1)
 newmark.solve()
@@ -327,6 +304,5 @@ flag = (TACS.OUTPUT_CONNECTIVITY |
         TACS.OUTPUT_DISPLACEMENTS |
         TACS.OUTPUT_STRAINS)
 f5 = TACS.ToFH5(assembler, TACS.BEAM_OR_SHELL_ELEMENT, flag)
-# f5.writeToFile('shell_dyn.f5')
 
 newmark.visualize_disp()
