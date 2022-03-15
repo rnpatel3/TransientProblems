@@ -180,7 +180,7 @@ if comm.rank == 0:
     u = u[:,:num_steps-1] #Trim U to account for nonsquare matrices SVD
     sigma = np.diag(s)
     pprint(s)
-    #Compute pseudoinverse of SIGMA
+    #Compute pseudoinverse of SIGMA (due to singular vectors...)
     sigma_inv = np.zeros((num_steps-1, num_steps-1))
     for k in range(num_steps-1):
         if s[k] > 0:
@@ -194,6 +194,9 @@ if comm.rank == 0:
     # pprint(v.shape)
     # pprint(sigma_inv.shape)
     lam, w = np.linalg.eigh(A_approx)
-    phi = np.dot(u,w)
-    pprint(lam)
+    phi = u@w #Projected DMD modes
+    pprint(lam) #DMD Eigenvalues
+
+    #If we want the eigenvectors (exact DMD modes):
+    phi_exact = y@v@sigma_inv@w
     exit(0)
