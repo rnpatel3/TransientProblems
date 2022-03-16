@@ -429,9 +429,13 @@ p = np.ones(x0.shape)
 
 cs_obj = problem.evalObjCon(x0+1j*dh*p)[0].imag/dh
 cs_con = problem.evalObjCon(x0+1j*dh*p)[1].imag/dh
+print("cs obj: ", cs_obj)
+print("cs con: ", cs_con)
 
 analytical_f  = np.dot(problem.evalObjConGradient(x0)[0],p)
 analytical_A = np.dot(problem.evalObjConGradient(x0)[1],p)
+print("act obj: ", analytical_f)
+print("act con: ", analytical_A)
 
 
 print("Relative error CS, Objective: ", (analytical_f-cs_obj)/cs_obj)

@@ -7,133 +7,97 @@ Created on Thu Oct 21 12:09:07 2021
 """
 
 import numpy as np
+import sys
+import os
+np.set_printoptions(threshold=sys.maxsize)
 import matplotlib.pylab as plt
-
 from mpi4py import MPI
-from tacs import TACS, elements, constitutive, functions
+from tacs import TACS, elements, constitutive, functions, pyTACS
 
-comm = MPI.COMM_WORLD
+# Load structural mesh from BDF file
+tacs_comm = MPI.COMM_WORLD
 
-# Create the stiffness object
-props = constitutive.MaterialProperties(rho=2570.0, E=70e9, nu=0.3, ys=350e6)
-stiff = constitutive.PlaneStressConstitutive(props)
-
-# Set up the basis function
-model = elements.LinearThermoelasticity2D(stiff)
-basis = elements.QuadraticTriangleBasis()
-elem = elements.Element2D(model, basis)
-
-# Allocate the TACSCreator object
-varsPerNode = model.getVarsPerNode()
-creator = TACS.Creator(comm, varsPerNode)
-
-if comm.rank == 0:
-    # Create the elements
-    nx = 10
-    ny = 10
-    
-    # Set the nodes
-    nnodes = (2*nx+1)*(2*ny+1)
-    nelems = 2*nx*ny
-    nodes = np.arange(nnodes).reshape((2*nx+1, 2*ny+1))
-    
-    conn = []
-    for j in range(ny):
-        for i in range(nx):
-            # Append the first set of nodes
-            conn.append([nodes[2*i, 2*j],
-                         nodes[2*i+2, 2*j],
-                         nodes[2*i+2, 2*j+2],
-                         nodes[2*i+1, 2*j],
-                         nodes[2*i+2, 2*j+1],
-                         nodes[2*i+1, 2*j+1]])
-            
-            # Append the second set of nodes
-            conn.append([nodes[2*i, 2*j+2],
-                         nodes[2*i, 2*j],
-                         nodes[2*i+2, 2*j+2],
-                         nodes[2*i, 2*j+1],
-                         nodes[2*i+1, 2*j+1],
-                         nodes[2*i+1, 2*j+2]])
-
-    # Set the node pointers
-    conn = np.array(conn, dtype=np.intc).flatten()
-    ptr = np.arange(0, 6*nelems+1, 6, dtype=np.intc)
-    elem_ids = np.zeros(nelems, dtype=np.intc)
-    creator.setGlobalConnectivity(nnodes, ptr, conn, elem_ids)
-
-    # Set up the boundary conditions
-    bcnodes = np.array(nodes[0,:], dtype=np.intc)
-
-    # Set the boundary condition variables
-    nbcs = 2*bcnodes.shape[0]
-    bcvars = np.zeros(nbcs, dtype=np.intc)
-    bcvars[:nbcs:2] = 0
-    bcvars[1:nbcs:2] = 1
-
-    # Set the boundary condition pointers
-    bcptr = np.arange(0, nbcs+1, 2, dtype=np.intc)
-    creator.setBoundaryConditions(bcnodes, bcvars, bcptr)
-
-    # Set the node locations
-    Xpts = np.zeros(3*nnodes)
-    x = np.linspace(0, 10, 2*nx+1)
-    y = np.linspace(0, 10, 2*nx+1)
-    for j in range(2*ny+1):
-        for i in range(2*nx+1):
-            Xpts[3*nodes[i,j]] = x[i]
-            Xpts[3*nodes[i,j]+1] = y[j]
-            
-    # Set the node locations
-    creator.setNodes(Xpts)
-
-# Set the elements
-elements = [ elem ]
-creator.setElements(elements)
-
-# Create the tacs assembler object
-assembler = creator.createTACS()
-
-res = assembler.createVec()
-ans = assembler.createVec()
-# mat = assembler.createSchurMat()
-mat = assembler.createMat()
-
-# # Create the preconditioner for the corresponding matrix
-# assembler.assembleMatType(TACS.STIFFNESS_MATRIX, mat)
-# dmat = mat.getDenseMatrix()
-# print(type(dmat))
-# print(dmat)
-
-# exit(0)
-# pc = TACS.Pc(mat)
-
-# pc.factor()
+#struct_mesh = TACS.MeshLoader(tacs_comm)
+bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel4.dat')
+struct_mesh = pyTACS(bdfFile, tacs_comm)
+#struct_mesh.scanBDFFile("axial_stiffened_panel.bdf")
 
 
+# structOptions = {
+#     'printtimings':True,
+#     # Specify what type of elements we want in the f5
+#     'writeSolution':True,
+#     'outputElement': TACS.PLANE_STRESS_ELEMENT,
+# }
 
-# This is the previous "Assembler" interface
-# class Assembler():
-#     def __init__(self, M, C, K):
-#         self.u = np.zeros((3,1))
-#         self.udot = np.zeros((3,1))
-#         self.uddot = np.zeros((3,1))
-#         self.M = M
-#         self.C = C
-#         self.K = K
+# bdfFile = os.path.join(os.path.dirname(__file__), 'circ-plate-dirichlet-bcs.bdf')
+# struct_mesh = pyTACS(bdfFile, tacs_comm, options=structOptions)
 
-#     def setVariables(self, u, udot, uddot):
-#         self.u[:] = np.transpose(u)
-#         self.udot[:] = np.transpose(udot)
-#         self.uddot[:] = np.transpose(uddot)
-#         return
-    
-#     def assembleJacobian(self, alpha, beta, gamma, force, res, mat):
-#         res[:] = np.dot(self.K, self.u) + np.dot(self.C, self.udot) + np.dot(self.M, self.uddot) - np.transpose(force)
-#         mat[:] = alpha*self.K + beta*self.C + gamma*self.M
-#         return 
+def elemCallBack(dvNum, compID, compDescript, elemDescripts, specialDVs, **kwargs):
+    # Material properties
+    rho = 2500.0        # density kg/m^3
+    E = 70e9            # Young's modulus (Pa)
+    nu = 0.3            # Poisson's ratio
+    ys = 464.0e6        # yield stress
+
+    # Plate geometry
+    tplate = 0.005    # 1 mm
+    tMin = 0.0001    # 0.1 mm
+    tMax = 0.05     # 5 cm
+
+    # Set up property model
+    prop = constitutive.MaterialProperties(rho=rho, E=E, nu=nu, ys=ys)
+    # Set up constitutive model
+    con = constitutive.IsoShellConstitutive(prop, t=tplate, tNum=dvNum, tlb=tMin, tub=tMax)
+    transform = None
+    # Set up element
+    elem = elements.Quad4Shell(transform, con)
+    scale = [100.0]
+    return elem, scale
+
+assembler = struct_mesh.createTACSAssembler(elemCallBack)
+
+# Loop over components, creating stiffness and element object for each
+num_components = struct_mesh.getNumComponents()
+
+'''
+Previous method of importing geometry and setting up stiffness/elements
+'''
+# for i in range(num_components):
+#     descriptor = struct_mesh.getElementDescript(i)
+#     print(descriptor)
+#     # Setup (isotropic) property and constitutive objects
+#     prop = constitutive.MaterialProperties(rho=rho, E=E, nu=nu, ys=ys)
+#     # Set one thickness dv for every component
+#     stiff = constitutive.IsoShellConstitutive(prop, t=thickness, tMin=min_thickness, tMax=max_thickness, tNum=i)
+
+#     element = None
+#     transform = None
+#     if descriptor in ["CQUAD", "CQUADR", "CQUAD4"]:
+#         element = elements.Quad4Shell(transform, stiff)
+#     elif descriptor in ["CQUAD9"]:
+#         element = elements.Quad9Shell(transform, stiff)
+#     struct_mesh.setElement(i, element)
+
+# # Create tacs assembler object from mesh loader
+# assembler = struct_mesh.createTACS(6)
 
 
+# Get the design variable values
+x = assembler.createDesignVec()
+x_array = x.getArray()
+assembler.getDesignVars(x)
+
+# Get the node locations
+X = assembler.createNodeVec()
+assembler.getNodes(X)
+assembler.setNodes(X)
+
+# # Create the forces
+forces = assembler.createVec()
+force_array = forces.getArray() 
+force_array[2::6] += 100.0 # uniform load in z direction
+assembler.applyBCs(forces)
 
 
 class Newmark():
@@ -170,21 +134,48 @@ class Newmark():
     def forward_integration(self):
         # dt =  self.t[1] - self.t[0]
         dt = 0.1 #Fixed val for now
-        #assembler = Assembler(self.M, self.C, self.K)
         # res = np.zeros((3,1))
         # J = np.zeros((3, 3))
         res = assembler.createVec()
         J = assembler.createSchurMat()
         
-        forces = assembler.createVec()
-        forces_array = forces.getArray()
-        
-        forces_array[1::4] = 10000
-        assembler.applyBCs(forces)        
+        # forces = assembler.createVec()
+        # forces_array = forces.getArray()
+        # # print(forces_array)
+        # # forces_array[2::5] = 100
+        # forces_array[1::6] = -10
+        # #forces_array[1202:1322:6] = 100
+        # print(forces_array)
+        # assembler.applyBCs(forces)        
         t = self.t
+        
+        # Create the force vector
+        forces = assembler.createVec()
+        temp = assembler.createVec()
+        
+        # Set the compressive force
+        # forces_array = forces.getArray()
+        # forces_array[1::6] = -10
+        # assembler.applyBCs(forces)
 
         for i in range(0, self.N-1):
             #u = np.ones((1,3)) #Some estimate of u[i+1]
+            
+            # if i < 2:
+            #         # Initial Perturbation force out of plane
+            #     forces_array = forces.getArray()
+            #     forces_array[1::6] = -10.0
+            #     forces_array[1202:1322:6] = 1000.0
+            #     assembler.applyBCs(forces)
+            # else:
+            #     forces_array = forces.getArray()
+            #     forces_array[1::6] = -10.0
+            #     forces_array[1202:1322:6] = 0.0
+            #     assembler.applyBCs(forces)
+            
+            # force_arr = forces.getArray()
+            # print(force_arr)
+            
             u = assembler.createVec()
             udot = assembler.createVec()
             uddot = assembler.createVec()
@@ -219,15 +210,15 @@ class Newmark():
                 pc = TACS.Pc(J)
                 pc.factor()
                 gmres_iters = 5
-                nrestart = 0
-                is_flexible = 0
+                nrestart = 2
+                is_flexible = 1
                 gmres = TACS.KSM(J, pc, gmres_iters, nrestart, is_flexible)
                 
-                res.axpy(-10*t[i], forces)
+                if i < 5:
+                    res.axpy(-t[i], forces)
+                else:
+                    res.axpy(-0.5, forces)
                 
-                # if rnorm.all() < self.ntol:
-                #     break
-            
                 if res.norm() < self.ntol:
                     break
 
@@ -240,10 +231,6 @@ class Newmark():
                 udot.axpy(-tacs_beta, update)
                 uddot.axpy(-tacs_gamma, update)
                 assembler.setVariables(u,udot,uddot)
-
-                # u -= np.transpose(update)
-                # udot -= tacs_beta*np.transpose(update)
-                # uddot -= tacs_gamma*np.transpose(update)
 
             #Store update to u, udot, uddot
 
@@ -264,7 +251,7 @@ class Newmark():
         
         for i in range(len(self.t)):
             assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
-            f5.writeToFile('panel_test%d.f5'%(i))
+            f5.writeToFile('stiffened_panel_pytacs%d.f5'%(i))
         return
     
 
@@ -307,7 +294,7 @@ flag = (TACS.OUTPUT_CONNECTIVITY |
         TACS.OUTPUT_NODES |
         TACS.OUTPUT_DISPLACEMENTS |
         TACS.OUTPUT_STRAINS)
-f5 = TACS.ToFH5(assembler, TACS.PLANE_STRESS_ELEMENT, flag)
-
+f5 = TACS.ToFH5(assembler, TACS.BEAM_OR_SHELL_ELEMENT, flag)
+# f5.writeToFile('shell_dyn.f5')
 
 newmark.visualize_disp()
