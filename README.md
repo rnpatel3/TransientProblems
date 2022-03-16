@@ -1,2 +1,2 @@
-# Landing Gear
-Building a framework for combining topology and trajectory optimization for designing a robotic landing gear system
+# Transient Simulations and Optimization
+Adding transient simulations including newmark beta, checkpointing, and reduced order modeling for structural optimziation problems
