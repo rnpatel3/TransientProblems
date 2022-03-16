@@ -118,7 +118,7 @@ Xpts = X.getArray()
 
 # Get nodal locations
 k = 0
-coeff = 0.05
+coeff = 0.25
 for node in range(firstNode, lastNode):
     i = node % (nx + 1)
     j = node // (nx + 1)
@@ -369,7 +369,7 @@ class Newmark():
         
         for i in range(len(self.t)):
             assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
-            f5.writeToFile('panel_test_dyn_initialDef_lessF%d.f5'%(i))
+            f5.writeToFile('panel_geo_impf%d.f5'%(i))
         return
     
 

@@ -289,7 +289,7 @@ c1.scale(3e-2)
 G = assembler.createMat()
 assembler.assembleMatType(TACS.GEOMETRIC_STIFFNESS_MATRIX, G)
 #mat = assembler.createMat()
-k2 = assembler.createSchurMat()
+k2 = assembler.createMat()
 assembler.assembleMatType(TACS.STIFFNESS_MATRIX, k2)
 pc = TACS.Pc(k2)
 subspace = 100

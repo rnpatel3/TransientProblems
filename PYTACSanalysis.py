@@ -92,7 +92,7 @@ allProblems = []
 # Setup transient problem
 # turn on print for solver in options
 transientOptions = {'printlevel':1}
-transientProb = FEAAssembler.createTransientProblem(name='pressure', tInit=0.0, tFinal=5.0, numSteps=50,
+transientProb = FEAAssembler.createTransientProblem(name='compression', tInit=0.0, tFinal=5.0, numSteps=50,
                                                     options=transientOptions)
 # Add functions
 transientProb.addFunction('mass', functions.StructuralMass)
@@ -126,7 +126,7 @@ for step_i, time in enumerate(timeSteps):
 
     #Adding constant load through all elements of plate
     Q = 100 * np.sin(2 * np.pi * fhz * time)
-    F = np.array([0.0, 0.0, Q, 0.0, 0.0, 0.0])
+    F = np.array([0.0, 0.0, 10, 0.0, 0.0, 0.0])
     transientProb.addLoadToNodes(step_i, nIDs, F, nastranOrdering=True)
 
 # Add transient problem to list

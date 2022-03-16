@@ -19,8 +19,7 @@ from tacs import TACS, elements, constitutive, functions, pyTACS
 tacs_comm = MPI.COMM_WORLD
 
 struct_mesh = TACS.MeshLoader(tacs_comm)
-struct_mesh.scanBDFFile("axial_stiffened_panel_2.bdf")
-
+struct_mesh.scanBDFFile("stiffPanel4_mod3.bdf")
 
 # structOptions = {
 #     'printtimings':True,
@@ -47,7 +46,7 @@ num_components = struct_mesh.getNumComponents()
 
 for i in range(num_components):
     descriptor = struct_mesh.getElementDescript(i)
-    print(descriptor)
+    #print(descriptor)
     # Setup (isotropic) property and constitutive objects
     prop = constitutive.MaterialProperties(rho=rho, E=E, nu=nu, ys=ys)
     # Set one thickness dv for every component
@@ -61,9 +60,10 @@ for i in range(num_components):
         element = elements.Quad9Shell(transform, stiff)
     struct_mesh.setElement(i, element)
 
+print('Gets here')
 # Create tacs assembler object from mesh loader
 assembler = struct_mesh.createTACS(6)
-
+print('But not here')
 
 # Get the design variable values
 x = assembler.createDesignVec()
@@ -236,7 +236,7 @@ class Newmark():
         
         for i in range(len(self.t)):
             assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
-            f5.writeToFile('stiffened_panel_2test%d.f5'%(i))
+            f5.writeToFile('stiff_panel_3test%d.f5'%(i))
         return
     
 
