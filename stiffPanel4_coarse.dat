@@ -1,0 +1,77 @@
+ID CAPS generated Problem FOR TACS
+SOL 1
+CEND
+
+LINE=10000
+DISP (PRINT,PUNCH) = ALL
+STRE (PRINT,PUNCH) = ALL
+STRA (PRINT,PUNCH) = ALL
+SUBCASE 1
+	LABEL = Default
+	ANALYSIS = STATICS
+	SPC = 3
+
+BEGIN BULK
+$---1---|---2---|---3---|---4---|---5---|---6---|---7---|---8---|---9---|---10--|
+PARAM, POST, -1
+
+SPCADD         3       1       2
+SPC1           1     123      13
+SPC1           1     123      58
+SPC1           1     123     211
+SPC1           1     123     212
+SPC1           1     123     213
+SPC1           1     123     214
+SPC1           1     123     526
+SPC1           1     123     527
+SPC1           1     123     528
+SPC1           1     123     529
+SPC1           1     123     726
+SPC1           1     123     727
+SPC1           1     123     728
+SPC1           1     123     729
+SPC1           1     123     922
+SPC1           1     123     923
+SPC1           1     123     924
+SPC1           1     123    1094
+SPC1           1     123    1095
+SPC1           1     123    1096
+SPC1           1     123    1097
+SPC1           2      12     191
+SPC1           2      12     371
+SPC1           2      12     506
+SPC1           2      12     686
+SPC1           2      12     825
+SPC1           2      12     826
+SPC1           2      12     827
+SPC1           2      12     828
+SPC1           2      12     910
+SPC1           2      12     911
+SPC1           2      12     912
+SPC1           2      12     994
+SPC1           2      12     995
+SPC1           2      12     996
+SPC1           2      12    1078
+SPC1           2      12    1079
+SPC1           2      12    1080
+SPC1           2      12    1206
+SPC1           2      12    1210
+SPC1           2      12    1211
+SPC1           2      12    1212
+MAT1           1 7.2E+10            0.33   2800.      0.      0.      0.+0      
++0         2.E+8      0.      0.
+PSHELL         8       1   6.E-3       1      1.       10.833333
+PSHELL         7       1   6.E-3       1      1.       10.833333
+PSHELL         6       1   6.E-3       1      1.       10.833333
+PSHELL         5       1   6.E-3       1      1.       10.833333
+PSHELL         4       1   6.E-3       1      1.       10.833333
+PSHELL         3       1   6.E-3       1      1.       10.833333
+PSHELL         2       1   6.E-3       1      1.       10.833333
+PSHELL         1       1   6.E-3       1      1.       10.833333
+DESVAR         1plateLen      0.      0.      0.      0.
+DESVAR         2plateWid      0.      0.      0.      0.
+DESVAR         3stiffHei      0.      0.      0.      0.
+
+INCLUDE 'stiffPanel4_coarse.bdf'
+
+ENDDATA
