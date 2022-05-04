@@ -59,7 +59,7 @@ def elemCallBack(dvNum, compID, compDescript, elemDescripts, specialDVs, **kwarg
     for elemDescript in elemDescripts:
         if elemDescript in ['CQUAD4', 'CQUADR']:
             #basis = elements.LinearQuadBasis()
-            elem = elements.Quad4ThermalShell(transform, con)
+            elem = elements.Quad4NonlinearThermalShell(transform, con)
         elif elemDescript in ['CTRIA3', 'CTRIAR']:
             basis = elements.LinearTriangleBasis()
         else:
@@ -92,10 +92,12 @@ Xpts[1::3] += 0.05*np.sin(np.pi*Xpts[2::3]/Lz)
 assembler.setNodes(X)
 
 # # Create the forces
-forces = assembler.createVec()
-force_array = forces.getArray() 
-force_array[2::7] -= 100.0 # uniform load in z direction
-assembler.applyBCs(forces)
+#forces = assembler.createVec()
+#force_array = forces.getArray()
+#nID_edge = [191,371,506,686,825,826,827,828,910,911,912,994,995,996,1078,1079,1080,1206,1210,1211,1212]
+
+#force_array[2::7] += 100.0 # uniform load in z direction
+#assembler.applyBCs(forces)
 
 
 class Newmark():
@@ -159,7 +161,7 @@ class Newmark():
         for i in range(0, self.N-1):
             #u = np.ones((1,3)) #Some estimate of u[i+1]
             
-            if i < 2:
+            """ if i < 2:
                 # Initial Perturbation force out of plane
                 forces_array = forces.getArray()
                 forces_array[2::7] = -20.0
@@ -171,10 +173,11 @@ class Newmark():
                 forces_array[2::7] = -20.0
                 #forces_array[6::7] = 1e-3
                 #forces_array[1202:1322:7] = 0.0
-                assembler.applyBCs(forces)
+                assembler.applyBCs(forces) """
             
-            # force_arr = forces.getArray()
-            # print(force_arr)
+            force_array = forces.getArray()
+            force_array[2::7] = 1000.0 # uniform load in z direction: 1000 produces buckling
+            assembler.applyBCs(forces)
             
             u = assembler.createVec()
             udot = assembler.createVec()
@@ -214,7 +217,7 @@ class Newmark():
                 is_flexible = 1
                 gmres = TACS.KSM(J, pc, gmres_iters, nrestart, is_flexible)
                 
-                res.axpy(-i, forces)
+                res.axpy(-t[i], forces)
                 
                 #if i < 5:
                 #    res.axpy(-t[i], forces)
@@ -234,8 +237,13 @@ class Newmark():
                 uddot.axpy(-tacs_gamma, update)
                 assembler.setVariables(u,udot,uddot)
 
+                if j == self.newton_iters-1:
+                    print("Newton iteration limit exceeded on step: ", i)
+                    print("\n Resulting residual norm: ", res.norm())
+                #if i==7:
+                #    assembler.testElement(15, 2)
+            
             #Store update to u, udot, uddot
-
             self.x[i+1] = u
             self.xdot[i+1] = udot
             self.xddot[i+1] = uddot
@@ -253,11 +261,11 @@ class Newmark():
         
         for i in range(len(self.t)):
             assembler.setVariables(self.x[i], self.xdot[i], self.xddot[i])
-            f5.writeToFile('geom_impf_NB_pytacs%d.f5'%(i))
+            f5.writeToFile('Nonlin_geom_impf_NB_pytacs%d.f5'%(i))
         return
     
 
-t = np.linspace(0,1.0,10)
+t = np.linspace(0,1.0,100)
 #x0 = np.array([0, 0, 0])
 #xdot0 = np.array([0, 0, 0])
 x0 =  assembler.createVec()
@@ -286,6 +294,17 @@ assembler.assembleMatType(TACS.STIFFNESS_MATRIX, k1)
 c1 = assembler.createMat()
 c1.scale(3e-2)
 
+newmark = Newmark(t, x0, xdot0, u, m1, c1, k1)
+newmark.solve()
+flag = (TACS.OUTPUT_CONNECTIVITY |
+        TACS.OUTPUT_NODES |
+        TACS.OUTPUT_DISPLACEMENTS |
+        TACS.OUTPUT_STRAINS)
+f5 = TACS.ToFH5(assembler, TACS.BEAM_OR_SHELL_ELEMENT, flag)
+
+newmark.visualize_disp()
+exit(1)
+
 G = assembler.createMat()
 assembler.assembleMatType(TACS.GEOMETRIC_STIFFNESS_MATRIX, G)
 #mat = assembler.createMat()
@@ -297,12 +316,4 @@ buckling = TACS.BucklingAnalysis(assembler, 1.3, G, k1, TACS.KSM(k2, pc, subspac
 buckling.solve()
 exit(1)
 
-newmark = Newmark(t, x0, xdot0, u, m1, c1, k1)
-newmark.solve()
-flag = (TACS.OUTPUT_CONNECTIVITY |
-        TACS.OUTPUT_NODES |
-        TACS.OUTPUT_DISPLACEMENTS |
-        TACS.OUTPUT_STRAINS)
-f5 = TACS.ToFH5(assembler, TACS.BEAM_OR_SHELL_ELEMENT, flag)
 
-newmark.visualize_disp()

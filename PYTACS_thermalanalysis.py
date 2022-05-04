@@ -42,7 +42,7 @@ structOptions = {
     #'outputElement': TACS.PLANE_STRESS_ELEMENT,
 }
 
-bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel4_coarse.dat')
+bdfFile = os.path.join(os.path.dirname(__file__), 'stiffPanel7.dat')
 FEAAssembler = pyTACS(bdfFile, comm, options=structOptions)
 
 def elemCallBack(dvNum, compID, compDescript, elemDescripts, globalDVs, **kwargs):
@@ -64,8 +64,8 @@ def elemCallBack(dvNum, compID, compDescript, elemDescripts, globalDVs, **kwargs
     prop = constitutive.MaterialProperties(rho=rho, kappa=kappa, specific_heat=specificHeat, E=E, nu=nu, ys=ys)
     # Set one thickness dv for every component
     con = constitutive.IsoShellConstitutive(prop, t=tplate, tNum=dvNum, tlb=tMin, tub=tMax)
+    #transform = elements.LinearElasticity3D(con)
     transform = None
-
     # For each element type in this component,
     # pass back the appropriate tacs element object
     elemList = []
@@ -90,8 +90,8 @@ FEAAssembler.initialize(elemCallBack)
 transientOptions = {'printlevel':1}
 # Setup problems
 # Create a transient problem that will represent time varying convection
-num_steps = 21
-transientProb = FEAAssembler.createTransientProblem('NonlinMechIncrLoadEdge', tInit=0.0, tFinal=2.0, numSteps=num_steps, options=transientOptions)
+num_steps = 70
+transientProb = FEAAssembler.createTransientProblem('RevisedIMP_NonlinThermalLoadAll_10imp_Transient', tInit=0.0, tFinal=35, numSteps=num_steps, options=transientOptions)
 # Create a static problem that will represent the steady state solution
 #staticProb = FEAAssembler.createStaticProblem(name='SteadyState')
 # Add both problems to a list
@@ -124,8 +124,8 @@ nID_edge = [191,371,506,686,825,826,827,828,910,911,912,994,995,996,1078,1079,10
 
 X = transientProb.getNodes()
 Xpts = X
-Lz = 3.0
-Xpts[1::3] += 0.1*np.sin(np.pi*Xpts[2::3]/Lz)
+Lz = 1.0
+Xpts[2::3] -= 0.01*np.sin(np.pi*Xpts[0::3]/Lz)
 transientProb.setNodes(X)
 
 #Adding dynamic loading
@@ -134,16 +134,19 @@ for step_i, time in enumerate(timeSteps):
     # # Multiply by time factor
     #Adding constant load through all elements of plate
     #Q = 100 * np.sin(2 * np.pi * fhz * time)
-    #F = np.array([0.0, 0.0, 1000*time, 0.0, 0.0, 0.0, 0])
-    F = np.array([0.0, 0.0, -step_i*500.0, 0.0, 0.0, 0.0, 0.0])
+    #F = np.array([0.0, 0.0, time*1000.0, 0.0, 0.0, 0.0]) #For Quad4Nonlinear/LinearShell
+    F = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, time*2e-2]) #ForThermalBuckling deltaT=0.5s #steps=70 t_fin=35
+    #F = np.array([0.0, 0.0, 100.0*time, 0.0, 0.0, 0.0, 1.0, 100.0]) #ForQuaternion
+    
     #if step_i < 2:
+
     #    F = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.5e-13])
     #elif step_i < 20:
     #    F = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -2.5e-13])
     #else:
     #    F = np.array([0.0, 0.0, 0, 0.0, 0.0, 0.0, 0])
-    #transientProb.addLoadToNodes(step_i, nIDs, F, nastranOrdering=True)
-    transientProb.addLoadToNodes(step_i, nID_edge, F, nastranOrdering=True)
+    transientProb.addLoadToNodes(step_i, nIDs, F, nastranOrdering=True)
+    #transientProb.addLoadToNodes(step_i, nID_edge, F, nastranOrdering=True)
 
 allProblems.append(transientProb)
 
@@ -152,8 +155,8 @@ funcs = {}
 funcsSens = {}
 for problem in allProblems:
     problem.solve()
-    problem.evalFunctions(funcs)
-    problem.evalFunctionsSens(funcsSens)
+    #problem.evalFunctions(funcs)
+    #problem.evalFunctionsSens(funcsSens)
     problem.writeSolution()
     
 
@@ -162,6 +165,7 @@ for problem in allProblems:
 #    pprint(funcs)
 #    pprint(funcsSens) Don't need sensitivities for now
 
+exit(1)
 if comm.rank == 0:
     #Create X and Y Vectors
     statearr = []
